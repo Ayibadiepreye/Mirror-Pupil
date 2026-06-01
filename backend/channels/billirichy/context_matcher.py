@@ -219,3 +219,85 @@ class BillirichyContextMatcher:
         """Check if text contains broadcast keyword."""
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in BROADCAST_KEYWORDS)
+    
+    async def validate_bare_signal_completion(
+        self,
+        bare_signal,
+        new_signal,
+        client = None
+    ) -> bool:
+        """
+        Validate that a new signal matches a bare signal in the waiting room.
+        Uses price checking with live market price to prevent false completions.
+        
+        Args:
+            bare_signal: BareSignal from waiting room
+            new_signal: ParsedSignal with SL that might complete the bare signal
+            client: TradeLocker client for live price fetching
+        
+        Returns:
+            True if new signal is valid completion, False otherwise
+        """
+        # Must match symbol and direction (basic check)
+        if bare_signal.symbol != new_signal.symbol:
+            return False
+        if bare_signal.direction != new_signal.direction:
+            return False
+        
+        # For LIMIT/STOP orders: check if entry prices match
+        # For MARKET orders: skip entry price check (executes at current price)
+        if bare_signal.order_type in ['LIMIT', 'STOP']:
+            if bare_signal.entry_price and new_signal.entry_price:
+                tolerance = self._get_pip_tolerance(bare_signal.symbol)
+                if not self._price_matches(bare_signal.entry_price, new_signal.entry_price, tolerance):
+                    logger.debug(
+                        f"[Bare Signal Validation] Entry price mismatch for {bare_signal.order_type}: "
+                        f"bare={bare_signal.entry_price:.5f} new={new_signal.entry_price:.5f}"
+                    )
+                    return False
+        
+        # Fetch current market price and validate SL placement
+        if client:
+            try:
+                current_price = await client.get_market_price(bare_signal.symbol)
+                tolerance = self._get_pip_tolerance(bare_signal.symbol)
+                
+                # Check if new signal's SL is reasonable relative to current price
+                # For BUY: SL should be below current price
+                # For SELL: SL should be above current price
+                if bare_signal.direction == 'BUY':
+                    if new_signal.sl >= current_price:
+                        logger.debug(
+                            f"[Bare Signal Validation] Invalid SL for BUY: "
+                            f"SL={new_signal.sl:.5f} >= current={current_price:.5f}"
+                        )
+                        return False
+                else:  # SELL
+                    if new_signal.sl <= current_price:
+                        logger.debug(
+                            f"[Bare Signal Validation] Invalid SL for SELL: "
+                            f"SL={new_signal.sl:.5f} <= current={current_price:.5f}"
+                        )
+                        return False
+                
+                # For LIMIT/STOP orders: check bare signal entry is still relevant
+                # For MARKET orders: skip this check (always relevant at current price)
+                if bare_signal.order_type in ['LIMIT', 'STOP'] and bare_signal.entry_price:
+                    if not self._price_matches(bare_signal.entry_price, current_price, tolerance * 5):
+                        logger.debug(
+                            f"[Bare Signal Validation] Bare signal entry too far from current: "
+                            f"entry={bare_signal.entry_price:.5f} current={current_price:.5f}"
+                        )
+                        return False
+                
+                logger.info(
+                    f"[Bare Signal Validation] ✓ Valid completion: "
+                    f"{bare_signal.symbol} {bare_signal.direction} {bare_signal.order_type} "
+                    f"current={current_price:.5f} new_SL={new_signal.sl:.5f}"
+                )
+                
+            except Exception as e:
+                logger.debug(f"[Bare Signal Validation] Could not fetch price: {e}")
+                # If we can't fetch price, fall back to basic validation (already passed)
+        
+        return True
