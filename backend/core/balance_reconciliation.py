@@ -282,10 +282,30 @@ class BalanceReconciliationMonitor:
         return MockProfile()
     
     async def _get_floating_pnl(self, account: Account) -> float:
-        """Get floating P&L for account (placeholder)."""
-        # TODO: Implement actual floating P&L calculation
-        # For now, return 0
-        return 0.0
+        """Get floating P&L for account."""
+        try:
+            # Get TradeLocker client
+            tl_account = self.account_manager.get_account(account.account_key)
+            if not tl_account:
+                return 0.0
+            
+            client = tl_account['client']
+            
+            # Get open positions
+            positions = await client.get_all_positions()
+            
+            # Calculate total floating P&L
+            total_pnl = 0.0
+            for pos in positions:
+                # Try different field names (API may vary)
+                pnl = float(pos.get('unrealizedPnL', 0) or pos.get('profit', 0) or pos.get('pnl', 0))
+                total_pnl += pnl
+            
+            return total_pnl
+            
+        except Exception as e:
+            logger.error(f"Failed to get floating P&L for {account.account_key}: {e}")
+            return 0.0
     
     async def _notify_gui(self, message: str, severity: str, account_key: str):
         """Send notification to GUI (placeholder)."""

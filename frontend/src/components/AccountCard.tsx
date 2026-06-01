@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Pause, Play, AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
 import { Account } from '../types'
 
 interface AccountCardProps {
