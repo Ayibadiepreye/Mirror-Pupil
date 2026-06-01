@@ -1,6 +1,6 @@
 """
 Mirror Pupil v5.1 - Risk Calculator
-Price delta calculation and floor/limit calculations.
+Price delta calculation and floor/limit calculations with proper currency conversion.
 """
 
 from typing import Optional, Dict
@@ -9,75 +9,299 @@ from loguru import logger
 from ..database import Account, RiskProfile
 
 
+def parse_symbol(symbol: str) -> tuple:
+    """
+    Parse symbol into base and quote currencies.
+    
+    Examples:
+        EURUSD → ("EUR", "USD")
+        USDJPY → ("USD", "JPY")
+        XAUUSD → ("XAU", "USD")
+        EURGBP → ("EUR", "GBP")
+    
+    Returns:
+        (base_currency, quote_currency)
+    """
+    # Standard 6-letter forex pairs
+    if len(symbol) == 6 and symbol.isalpha():
+        return symbol[:3], symbol[3:]
+    
+    # Pairs ending with USD (e.g., XAUUSD, BTCUSD)
+    if symbol.endswith("USD"):
+        return symbol[:-3], "USD"
+    
+    # Pairs starting with USD (e.g., USDJPY, USDCAD)
+    elif symbol.startswith("USD"):
+        return "USD", symbol[3:]
+    
+    # Fallback: split in half
+    mid = len(symbol) // 2
+    return symbol[:mid], symbol[mid:]
+
+
+def detect_symbol_type(symbol: str) -> str:
+    """
+    Detect symbol type for conversion logic.
+    
+    Returns:
+        "quote_usd" - Quote currency is USD (EURUSD, GBPUSD, XAUUSD)
+        "base_usd"  - Base currency is USD (USDJPY, USDCHF, USDCAD)
+        "cross"     - Cross pair (EURGBP, EURJPY, GBPJPY)
+        "index"     - Index (US30, NAS100, UK100)
+    """
+    # Check if it's an index
+    indices = ["US30", "NAS100", "US500", "UK100", "GER40", "JP225", "USOIL"]
+    if any(idx in symbol.upper() for idx in indices):
+        return "index"
+    
+    base, quote = parse_symbol(symbol)
+    
+    if quote == "USD":
+        return "quote_usd"  # EURUSD, GBPUSD, XAUUSD
+    elif base == "USD":
+        return "base_usd"   # USDJPY, USDCHF, USDCAD
+    else:
+        return "cross"      # EURGBP, EURJPY, GBPJPY
+
+
+async def get_conversion_rate(client, base: str, quote: str, current_price: Optional[float] = None) -> float:
+    """
+    Fetch live conversion rate to USD for cross pairs.
+    
+    Logic:
+    1. Try fetching {quote}USD (e.g., GBPUSD for EURGBP)
+    2. If that fails, try {base}USD (e.g., EURUSD for EURGBP) and calculate
+    3. If both fail, use default multiplier (0.01)
+    
+    Args:
+        client: TradeLocker client
+        base: Base currency
+        quote: Quote currency
+        current_price: Current price of the pair (for calculation)
+    
+    Returns:
+        Conversion rate to USD
+    """
+    conversion_rate = None
+    
+    # Try {quote}USD first (e.g., GBPUSD for EURGBP)
+    try:
+        quote_usd = f"{quote}USD"
+        conversion_rate = await client.get_market_price(quote_usd)
+        if conversion_rate and conversion_rate > 0:
+            logger.debug(f"Conversion rate from {quote_usd}: {conversion_rate:.5f}")
+            return conversion_rate
+    except Exception as e:
+        logger.debug(f"Failed to fetch {quote}USD: {e}")
+    
+    # Try {base}USD as fallback (e.g., EURUSD for EURGBP)
+    try:
+        base_usd = f"{base}USD"
+        base_rate = await client.get_market_price(base_usd)
+        if base_rate and base_rate > 0 and current_price and current_price > 0:
+            # Calculate quote/USD from base/USD
+            # Example: EURGBP = 0.85, EURUSD = 1.08
+            # GBPUSD = EURUSD / EURGBP = 1.08 / 0.85 = 1.27
+            conversion_rate = base_rate / current_price
+            logger.debug(f"Conversion rate calculated from {base_usd}: {conversion_rate:.5f}")
+            return conversion_rate
+    except Exception as e:
+        logger.debug(f"Failed to fetch {base}USD: {e}")
+    
+    # Default fallback
+    logger.warning(f"Could not fetch conversion rate for {base}/{quote}, using default 0.01")
+    return 0.01
+
+
+async def calculate_usd_risk(
+    symbol: str,
+    entry_price: float,
+    stop_loss: float,
+    lot_size: float,
+    client,  # TradeLocker client
+    current_price: Optional[float] = None,
+    instrument: Optional[Dict] = None
+) -> float:
+    """
+    Calculate USD risk for any trading pair with proper currency conversion.
+    
+    This is the CORRECT implementation that fetches live prices for conversions.
+    
+    Args:
+        symbol: Trading symbol (e.g., "EURUSD", "USDJPY", "XAUUSD")
+        entry_price: Entry price
+        stop_loss: Stop loss price
+        lot_size: Lot size
+        client: TradeLocker client (for fetching live prices)
+        current_price: Current market price (optional, will fetch if needed)
+        instrument: Instrument data dict (optional, for contract size/tick data)
+    
+    Returns:
+        Risk in USD
+    """
+    # 1. Validate inputs
+    if entry_price <= 0 or stop_loss <= 0:
+        logger.warning(f"Invalid prices for {symbol}: entry={entry_price}, sl={stop_loss}")
+        return 0.01 * lot_size  # Minimal risk
+    
+    price_diff = abs(entry_price - stop_loss)
+    if price_diff <= 0:
+        logger.warning(f"No price difference for {symbol}")
+        return 0.01 * lot_size
+    
+    # 2. Get contract size from instrument data
+    contract_size = 100000.0  # Default for forex
+    if instrument:
+        contract_size = float(instrument.get("contract_size", 100000))
+    
+    # 3. Detect symbol type
+    symbol_type = detect_symbol_type(symbol)
+    base, quote = parse_symbol(symbol)
+    
+    logger.debug(
+        f"Risk calculation for {symbol}: type={symbol_type}, "
+        f"entry={entry_price}, sl={stop_loss}, diff={price_diff:.5f}, "
+        f"lot={lot_size}, contract={contract_size}"
+    )
+    
+    # 4. Calculate risk based on type
+    if symbol_type == "index":
+        # Indices: Use tick size and tick value
+        tick_size = float(instrument.get("tick_size", 1.0)) if instrument else 1.0
+        tick_value = float(instrument.get("tick_value", 1.0)) if instrument else 1.0
+        
+        ticks_at_risk = price_diff / tick_size
+        usd_risk = ticks_at_risk * tick_value * lot_size
+        
+        logger.debug(
+            f"Index risk: {symbol} "
+            f"{price_diff:.2f} / {tick_size} × {tick_value} × {lot_size} = ${usd_risk:.2f}"
+        )
+        
+    elif symbol_type == "quote_usd":
+        # Quote = USD (EURUSD, GBPUSD, XAUUSD)
+        # No conversion needed - risk is already in USD
+        risk_quote = price_diff * contract_size * lot_size
+        usd_risk = risk_quote
+        
+        logger.debug(
+            f"Quote USD risk: {symbol} "
+            f"{price_diff:.5f} × {contract_size} × {lot_size} = ${usd_risk:.2f}"
+        )
+        
+    elif symbol_type == "base_usd":
+        # Base = USD (USDJPY, USDCHF, USDCAD)
+        # Divide by current price to convert from quote currency to USD
+        risk_quote = price_diff * contract_size * lot_size
+        
+        # Use current_price or entry_price as fallback
+        conversion_price = current_price or entry_price
+        
+        if conversion_price and conversion_price > 0:
+            usd_risk = risk_quote / conversion_price
+            logger.debug(
+                f"Base USD risk: {symbol} "
+                f"{risk_quote:.2f} {quote} / {conversion_price:.5f} = ${usd_risk:.2f}"
+            )
+        else:
+            logger.warning(f"No conversion price for {symbol}, using 1:1")
+            usd_risk = risk_quote
+        
+    elif symbol_type == "cross":
+        # Cross pairs (EURGBP, EURJPY, GBPJPY)
+        # Fetch conversion rate to USD
+        risk_quote = price_diff * contract_size * lot_size
+        
+        if quote == "JPY":
+            # Special handling for JPY cross pairs (EURJPY, GBPJPY)
+            # Fetch USDJPY rate
+            try:
+                usdjpy_rate = await client.get_market_price("USDJPY")
+                if not usdjpy_rate or usdjpy_rate <= 0:
+                    usdjpy_rate = 150.0  # Default fallback
+                
+                usd_risk = risk_quote / usdjpy_rate
+                logger.debug(
+                    f"Cross JPY risk: {symbol} "
+                    f"{risk_quote:.2f} JPY / {usdjpy_rate:.2f} = ${usd_risk:.2f}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch USDJPY rate: {e}")
+                usd_risk = risk_quote / 150.0  # Fallback
+        else:
+            # Other cross pairs (EURGBP, EURCHF, etc.)
+            # Fetch conversion rate
+            try:
+                conversion_rate = await get_conversion_rate(client, base, quote, current_price)
+                usd_risk = risk_quote * conversion_rate
+                logger.debug(
+                    f"Cross risk: {symbol} "
+                    f"{risk_quote:.2f} {quote} × {conversion_rate:.5f} = ${usd_risk:.2f}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to get conversion rate for {symbol}: {e}")
+                usd_risk = risk_quote * 0.01  # Fallback
+    
+    else:
+        # Unknown type - use conservative estimate
+        logger.warning(f"Unknown symbol type for {symbol}, using conservative estimate")
+        risk_quote = price_diff * contract_size * lot_size
+        usd_risk = risk_quote * 0.01
+    
+    # 5. Ensure minimum risk
+    if usd_risk <= 0:
+        usd_risk = 0.01 * lot_size
+    
+    logger.info(f"✓ USD risk for {symbol}: ${usd_risk:.2f}")
+    return usd_risk
+
+
+# Legacy sync function for backward compatibility
 def calculate_price_delta(
     entry_price: float,
     sl_price: float,
     lot_size: float,
     symbol: str,
-    contract_size: float = 100000.0,  # Standard forex lot
+    contract_size: float = 100000.0,
     tick_size: Optional[float] = None,
     tick_value: Optional[float] = None,
     current_price: Optional[float] = None
 ) -> float:
     """
-    Calculate risk in USD for a trade.
+    LEGACY FUNCTION - For backward compatibility only.
     
-    Formula (Forex):
-        Risk (quote currency) = |Entry - SL| × Contract Size × Lot Size
+    This function does NOT fetch live prices and will give INCORRECT results
+    for USD-base pairs and cross pairs.
     
-    Formula (Indices):
-        Risk (USD) = (|Entry - SL| / Tick Size) × Tick Value × Lot Size
-    
-    Args:
-        entry_price: Entry price
-        sl_price: Stop loss price
-        lot_size: Lot size
-        symbol: Trading symbol
-        contract_size: Contract size (default 100,000 for forex)
-        tick_size: Tick size for indices
-        tick_value: Tick value for indices
-        current_price: Current market price for currency conversion
-    
-    Returns:
-        Risk in USD
+    Use calculate_usd_risk() instead for accurate calculations.
     """
+    logger.warning(
+        f"Using legacy calculate_price_delta() for {symbol} - "
+        f"results may be inaccurate. Use calculate_usd_risk() instead."
+    )
+    
     price_diff = abs(entry_price - sl_price)
     
-    # Indices (e.g., US30, NAS100, SPX500)
+    # Indices
     if tick_size and tick_value:
         risk_usd = (price_diff / tick_size) * tick_value * lot_size
-        logger.debug(
-            f"Price delta (index): {symbol} "
-            f"|{entry_price} - {sl_price}| / {tick_size} × {tick_value} × {lot_size} = ${risk_usd:.2f}"
-        )
         return risk_usd
     
     # Forex
     risk_quote = price_diff * contract_size * lot_size
     
-    # Currency conversion to USD
+    # Currency conversion (APPROXIMATE - not accurate!)
     if symbol.endswith("USD"):
-        # Quote is USD (e.g., EURUSD, GBPUSD) - no conversion needed
         risk_usd = risk_quote
     elif symbol.startswith("USD"):
-        # USD is base (e.g., USDCAD, USDJPY) - divide by current price
         if current_price:
             risk_usd = risk_quote / current_price
         else:
-            # Fallback: assume 1:1
             risk_usd = risk_quote
             logger.warning(f"No current price for {symbol}, assuming 1:1 conversion")
     else:
-        # Cross pair (e.g., EURJPY, GBPJPY) - need cross-to-USD rate
-        # For now, use approximate conversion
-        # TODO: Implement proper cross-pair conversion with live rates
         risk_usd = risk_quote
         logger.warning(f"Cross pair {symbol} - using approximate conversion")
-    
-    logger.debug(
-        f"Price delta (forex): {symbol} "
-        f"|{entry_price} - {sl_price}| × {contract_size} × {lot_size} = ${risk_usd:.2f}"
-    )
     
     return risk_usd
 

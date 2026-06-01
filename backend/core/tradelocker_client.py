@@ -491,6 +491,60 @@ class TradeLockerClient:
             return positions
         
         return []
+    
+    async def get_market_price(self, symbol: str) -> Optional[float]:
+        """
+        Get current market price (mid price) for a symbol.
+        Used for currency conversion in risk calculations.
+        
+        Args:
+            symbol: Trading symbol (e.g., "EURUSD", "USDJPY")
+        
+        Returns:
+            Mid price (average of bid/ask) or None if not available
+        """
+        try:
+            # Get instrument ID
+            instrument_id = await self.get_instrument_id_from_symbol_name(symbol)
+            if not instrument_id:
+                logger.warning(f"[{self.credential_key}] Cannot get price for unknown symbol: {symbol}")
+                return None
+            
+            # Get all instruments to find current price
+            instruments = await self.get_all_instruments()
+            
+            # Find the instrument
+            instrument = next(
+                (inst for inst in instruments if inst.get('tradableInstrumentId') == instrument_id),
+                None
+            )
+            
+            if not instrument:
+                logger.warning(f"[{self.credential_key}] Instrument not found: {symbol}")
+                return None
+            
+            # Try to get bid/ask prices
+            bid = instrument.get('bid')
+            ask = instrument.get('ask')
+            
+            if bid and ask:
+                mid_price = (float(bid) + float(ask)) / 2.0
+                logger.debug(f"[{self.credential_key}] {symbol} price: {mid_price:.5f}")
+                return mid_price
+            
+            # Fallback: try to get last price
+            last_price = instrument.get('lastPrice') or instrument.get('price')
+            if last_price:
+                price = float(last_price)
+                logger.debug(f"[{self.credential_key}] {symbol} last price: {price:.5f}")
+                return price
+            
+            logger.warning(f"[{self.credential_key}] No price data available for {symbol}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"[{self.credential_key}] Error fetching price for {symbol}: {e}")
+            return None
 
 
 # Token refresh background task

@@ -321,7 +321,9 @@ class TradeExecutor:
                 entry_price=signal.entry_price or 0.0,  # Will be filled at market
                 sl_price=signal.sl,
                 lot_size=self.default_lot_size,
-                symbol=signal.symbol
+                symbol=signal.symbol,
+                client=client,  # Pass TradeLocker client for live price fetching
+                instrument=instrument if 'instrument' in locals() else None
             )
             
             if not validation['allowed']:
@@ -658,7 +660,9 @@ class TradeExecutor:
             symbol=mgmt.symbol,
             direction=mgmt.direction,
             text=mgmt.raw_text,
-            account_key=account_key
+            account_key=account_key,
+            action=mgmt.action,  # Pass action for Firepips Level 9 validation
+            client=client  # Pass TradeLocker client for live price fetching
         )
         
         if not target_trades:

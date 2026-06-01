@@ -214,3 +214,100 @@ async def disable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to disable channel: {str(e)}"
         )
+
+
+@router.put("/{channel_id}", response_model=ChannelResponse)
+async def update_channel(
+    channel_id: int,
+    channel_data: ChannelUpdate,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Update an existing channel.
+    
+    Args:
+        channel_id: Channel ID
+        channel_data: Channel update data
+    
+    Returns:
+        Updated channel details
+    """
+    try:
+        # Get existing channel
+        existing = await db.get_channel(channel_id)
+        if not existing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Channel not found: {channel_id}"
+            )
+        
+        # Update fields (keep existing if not provided)
+        updated_channel = Channel(
+            channel_id=channel_id,
+            display_name=channel_data.display_name or existing.display_name,
+            signal_prefix=channel_data.signal_prefix or existing.signal_prefix,
+            entry_logic_module=channel_data.entry_logic_module or existing.entry_logic_module,
+            management_logic_module=channel_data.management_logic_module or existing.management_logic_module,
+            priority=channel_data.priority if channel_data.priority is not None else existing.priority,
+            enabled=channel_data.enabled if channel_data.enabled is not None else existing.enabled,
+            notes=channel_data.notes if channel_data.notes is not None else existing.notes
+        )
+        
+        # Update in database
+        success = await db.update_channel(channel_id, updated_channel)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update channel"
+            )
+        
+        # Get updated channel
+        updated = await db.get_channel(channel_id)
+        logger.info(f"✓ Updated channel {channel_id}")
+        return ChannelResponse.model_validate(updated)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update channel {channel_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update channel: {str(e)}"
+        )
+
+
+@router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+    """
+    Delete a channel and all related data.
+    
+    Args:
+        channel_id: Channel ID
+    """
+    try:
+        # Check if channel exists
+        channel = await db.get_channel(channel_id)
+        if not channel:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Channel not found: {channel_id}"
+            )
+        
+        # Delete channel and all related data
+        success = await db.delete_channel(channel_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete channel"
+            )
+        
+        logger.info(f"✓ Deleted channel {channel_id}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete channel {channel_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete channel: {str(e)}"
+        )

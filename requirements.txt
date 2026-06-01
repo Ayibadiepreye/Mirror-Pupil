@@ -6,7 +6,7 @@
 pytdbot==0.8.5
 
 # TradeLocker SDK
-tradelocker==1.0.0
+tradelocker==0.56.2
 
 # Database
 asyncpg==0.29.0  # Async PostgreSQL driver for Neon

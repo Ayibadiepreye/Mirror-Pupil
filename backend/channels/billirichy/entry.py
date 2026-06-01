@@ -117,15 +117,16 @@ def extract_tps(text: str) -> List[float]:
 
 
 def determine_order_type(text: str, has_entry_price: bool) -> str:
-    """Determine order type from text."""
+    """
+    Determine order type from text.
+    Only LIMIT/STOP if explicitly stated, otherwise MARKET.
+    """
     if LIMIT_RE.search(text):
         return 'LIMIT'
     elif STOP_ORDER_RE.search(text):
         return 'STOP'
-    elif has_entry_price:
-        # Has explicit entry price but no limit/stop keyword -> assume limit
-        return 'LIMIT'
     else:
+        # Default to MARKET unless explicitly stated otherwise
         return 'MARKET'
 
 
@@ -192,7 +193,7 @@ async def parse_entry_signal(
             msg_id=msg_id,
             symbol=symbol,
             direction=direction,
-            entry_price=entry_price,
+            entry_price=entry_price if order_type in ['LIMIT', 'STOP'] else None,
             order_type=order_type,
             raw_text=text,
             timestamp=timestamp,
@@ -205,8 +206,8 @@ async def parse_entry_signal(
     # WELL-DEFINED signal
     
     # 7. Handle entry price for market orders
-    if order_type == 'MARKET' and entry_price is None:
-        # Will be filled at market price during execution
+    if order_type == 'MARKET':
+        # Market orders execute at current price, ignore any mentioned price
         entry_price = None
     
     # 8. Handle TP

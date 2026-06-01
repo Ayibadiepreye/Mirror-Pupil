@@ -193,19 +193,16 @@ async def update_account(
         
         # Update fields
         if account_data.display_name is not None:
-            # TODO: Add update_account_display_name method to DatabaseManager
-            pass
+            await db.update_account_display_name(account_key, account_data.display_name)
         
         if account_data.paused is not None:
             await db.update_account_paused(account_key, account_data.paused)
         
         if account_data.risk_profile_id is not None:
-            # TODO: Add update_account_risk_profile method to DatabaseManager
-            pass
+            await db.update_account_risk_profile(account_key, account_data.risk_profile_id)
         
         if account_data.max_concurrent_trades_override is not None:
-            # TODO: Add update_account_max_concurrent method to DatabaseManager
-            pass
+            await db.update_account_max_concurrent(account_key, account_data.max_concurrent_trades_override)
         
         # Get updated account
         updated_account = await db.get_account(account_key)
@@ -239,11 +236,15 @@ async def delete_account(account_key: str, db: DatabaseManager = Depends(get_db)
                 detail=f"Account not found: {account_key}"
             )
         
-        # TODO: Add delete_account method to DatabaseManager
-        # For now, just pause it
-        await db.update_account_paused(account_key, True)
+        # Delete account and all related data
+        success = await db.delete_account(account_key)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete account"
+            )
         
-        logger.info(f"✓ Deleted (paused) account: {account_key}")
+        logger.info(f"✓ Deleted account: {account_key}")
         
     except HTTPException:
         raise
@@ -318,4 +319,63 @@ async def resume_account(account_key: str, db: DatabaseManager = Depends(get_db)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to resume account: {str(e)}"
+        )
+
+
+class PayoutResetRequest(BaseModel):
+    """Request model for payout reset."""
+    new_balance: float
+
+
+@router.post("/{account_key}/reset-payout", response_model=AccountResponse)
+async def reset_payout(
+    account_key: str,
+    reset_data: PayoutResetRequest,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Reset account after payout withdrawal.
+    
+    This resets all balance tracking fields to start fresh with the new balance
+    after a trader withdraws profits.
+    
+    Args:
+        account_key: Account key
+        reset_data: New balance after withdrawal
+    
+    Returns:
+        Updated account details
+    """
+    try:
+        # Check if account exists
+        account = await db.get_account(account_key)
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Account not found: {account_key}"
+            )
+        
+        # Perform payout reset
+        success = await db.reset_payout_after_withdrawal(account_key, reset_data.new_balance)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset payout"
+            )
+        
+        # Get updated account
+        updated_account = await db.get_account(account_key)
+        logger.info(
+            f"✓ Reset payout for {account_key}: "
+            f"new balance ${reset_data.new_balance:.2f}"
+        )
+        return AccountResponse.model_validate(updated_account)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to reset payout for {account_key}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset payout: {str(e)}"
         )

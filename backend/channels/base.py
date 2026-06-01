@@ -286,10 +286,57 @@ class ChannelPlugin(ABC):
     async def _try_complete_waiting_room(self, message, clean_text: str) -> bool:
         """
         Try to complete a waiting room entry with this message.
+        Uses context matching with live price checking to prevent false matches.
         Returns True if completed, False otherwise.
         """
-        # Subclasses can override for custom completion logic
-        return False
+        from loguru import logger
+        
+        if not self._waiting_room:
+            return False
+        
+        # Try to parse this message as an entry signal
+        signal = await self.parse_entry(message, clean_text)
+        
+        # Only proceed if we got a complete signal with SL
+        if not signal or not signal.sl:
+            return False
+        
+        # Check if we have a bare signal waiting for this symbol+direction
+        key = (signal.symbol, signal.direction)
+        if key not in self._waiting_room:
+            return False
+        
+        bare_signal = self._waiting_room[key]
+        
+        # ENHANCED MATCHING: Use context-aware price validation
+        # Check if the new signal's price is close to the bare signal's price
+        # This prevents false completions when trader posts a different trade
+        
+        if hasattr(self, '_validate_bare_signal_completion'):
+            # Use context matcher if available (BillirichyFX, Firepips)
+            is_valid = await self._validate_bare_signal_completion(
+                bare_signal, signal, message
+            )
+            if not is_valid:
+                logger.debug(
+                    f"[{self.display_name}] Waiting room: Price mismatch - "
+                    f"new signal does not match bare signal context"
+                )
+                return False
+        
+        # Complete the bare signal
+        logger.info(
+            f"[{self.display_name}] Waiting room: Completed {signal.symbol} {signal.direction} "
+            f"with SL={signal.sl} from matching message"
+        )
+        
+        # Remove from waiting room
+        del self._waiting_room[key]
+        
+        # TODO: When we have trade execution, dispatch completed signal here
+        logger.info(f"[{self.display_name}] {signal}")
+        
+        return True
     
     async def _handle_waiting_room_completion(self, message, clean_text: str):
         """Handle completion of a waiting room entry via edit."""

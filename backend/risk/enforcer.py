@@ -85,7 +85,9 @@ class RiskEnforcer:
         entry_price: float,
         sl_price: float,
         lot_size: float,
-        symbol: str
+        symbol: str,
+        client = None,  # TradeLocker client for live price fetching
+        instrument: Optional[Dict] = None
     ) -> Dict:
         """
         Validate a trade before execution.
@@ -96,16 +98,49 @@ class RiskEnforcer:
         3. Overall loss limit
         4. Concurrent trade limit
         
+        Args:
+            account: Account object
+            profile: Risk profile
+            entry_price: Entry price
+            sl_price: Stop loss price
+            lot_size: Lot size
+            symbol: Trading symbol
+            client: TradeLocker client (for fetching live prices)
+            instrument: Instrument data dict (optional)
+        
         Returns:
             Dict with 'allowed' (bool) and 'reason' (str)
         """
-        # Calculate trade risk
-        trade_risk = calculate_price_delta(
-            entry_price=entry_price,
-            sl_price=sl_price,
-            lot_size=lot_size,
-            symbol=symbol
-        )
+        # Calculate trade risk using the correct async function
+        if client:
+            from .calculator import calculate_usd_risk
+            
+            # Fetch current price for conversion
+            current_price = None
+            try:
+                current_price = await client.get_market_price(symbol)
+            except Exception as e:
+                logger.warning(f"Could not fetch current price for {symbol}: {e}")
+            
+            trade_risk = await calculate_usd_risk(
+                symbol=symbol,
+                entry_price=entry_price,
+                stop_loss=sl_price,
+                lot_size=lot_size,
+                client=client,
+                current_price=current_price,
+                instrument=instrument
+            )
+        else:
+            # Fallback to legacy function (less accurate)
+            from .calculator import calculate_price_delta
+            logger.warning("No TradeLocker client provided, using legacy risk calculation")
+            trade_risk = calculate_price_delta(
+                entry_price=entry_price,
+                sl_price=sl_price,
+                lot_size=lot_size,
+                symbol=symbol
+            )
         
         # Get active trades
         active_trades = await self.db.get_active_trades(account.account_key)

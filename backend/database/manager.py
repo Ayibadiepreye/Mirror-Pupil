@@ -719,6 +719,273 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to remove trade {trade_id}: {e}")
             return False
+    
+    # ==================== ADDITIONAL ACCOUNT METHODS ====================
+    
+    async def update_account_display_name(self, account_key: str, display_name: str) -> bool:
+        """Update account display name."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE accounts SET display_name = $1 WHERE account_key = $2",
+                    display_name, account_key
+                )
+                logger.info(f"✓ Updated display name for {account_key}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update display name for {account_key}: {e}")
+            return False
+    
+    async def update_account_risk_profile(self, account_key: str, risk_profile_id: int) -> bool:
+        """Update account risk profile."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE accounts SET risk_profile_id = $1 WHERE account_key = $2",
+                    risk_profile_id, account_key
+                )
+                logger.info(f"✓ Updated risk profile for {account_key} to {risk_profile_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update risk profile for {account_key}: {e}")
+            return False
+    
+    async def update_account_max_concurrent(self, account_key: str, max_concurrent: Optional[int]) -> bool:
+        """Update account max concurrent trades override."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE accounts SET max_concurrent_trades_override = $1 WHERE account_key = $2",
+                    max_concurrent, account_key
+                )
+                logger.info(f"✓ Updated max concurrent for {account_key} to {max_concurrent}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update max concurrent for {account_key}: {e}")
+            return False
+    
+    async def delete_account(self, account_key: str) -> bool:
+        """Delete an account and all related data."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Delete in order (foreign key constraints)
+                await conn.execute("DELETE FROM channel_subscriptions WHERE account_key = $1", account_key)
+                await conn.execute("DELETE FROM active_trades WHERE account_key = $1", account_key)
+                await conn.execute("DELETE FROM trade_history WHERE account_key = $1", account_key)
+                await conn.execute("DELETE FROM profitable_days WHERE account_key = $1", account_key)
+                await conn.execute("DELETE FROM accounts WHERE account_key = $1", account_key)
+                
+                logger.info(f"✓ Deleted account {account_key} and all related data")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete account {account_key}: {e}")
+            return False
+    
+    async def reset_payout_after_withdrawal(
+        self,
+        account_key: str,
+        new_balance: float
+    ) -> bool:
+        """
+        Reset account after payout withdrawal.
+        
+        This is called after a trader withdraws profits and wants to reset
+        the account to start fresh with the new balance.
+        
+        Updates:
+        - initial_balance = new_balance
+        - current_balance = new_balance
+        - highest_banked_balance = new_balance
+        - daily_start_balance = new_balance
+        - last_synced_balance = new_balance
+        - profit_locked = False
+        - cycle_start_date = today
+        - cycle_best_day_pnl = 0.0
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                today = datetime.now().date().isoformat()
+                
+                await conn.execute(
+                    """
+                    UPDATE accounts SET
+                        initial_balance = $1,
+                        current_balance = $1,
+                        highest_banked_balance = $1,
+                        daily_start_balance = $1,
+                        last_synced_balance = $1,
+                        profit_locked = FALSE,
+                        cycle_start_date = $2,
+                        cycle_best_day_pnl = 0.0
+                    WHERE account_key = $3
+                    """,
+                    new_balance, today, account_key
+                )
+                
+                logger.info(
+                    f"✓ Reset payout for {account_key}: "
+                    f"new balance ${new_balance:.2f}, cycle start {today}"
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to reset payout for {account_key}: {e}")
+            return False
+    
+    # ==================== RISK PROFILE CRUD METHODS ====================
+    
+    async def add_risk_profile(self, profile: RiskProfile) -> Optional[int]:
+        """Add a new risk profile. Returns profile_id."""
+        try:
+            async with self.pool.acquire() as conn:
+                profile_id = await conn.fetchval(
+                    """
+                    INSERT INTO risk_profiles (
+                        profile_name, is_default,
+                        max_risk_per_trade_pct, daily_loss_pct, daily_trailing,
+                        overall_loss_pct, overall_trailing, overall_trail_from_closed_balance,
+                        profit_lock_pct, profit_lock_floor_pct, payout_buffer_pct,
+                        max_concurrent_trades, commission_per_lot, safety_buffer_pct, notes
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    RETURNING profile_id
+                    """,
+                    profile.profile_name, profile.is_default,
+                    profile.max_risk_per_trade_pct, profile.daily_loss_pct, profile.daily_trailing,
+                    profile.overall_loss_pct, profile.overall_trailing, profile.overall_trail_from_closed_balance,
+                    profile.profit_lock_pct, profile.profit_lock_floor_pct, profile.payout_buffer_pct,
+                    profile.max_concurrent_trades, profile.commission_per_lot, profile.safety_buffer_pct,
+                    profile.notes
+                )
+                
+                logger.info(f"✓ Created risk profile: {profile.profile_name} (ID: {profile_id})")
+                return profile_id
+        except Exception as e:
+            logger.error(f"Failed to create risk profile: {e}")
+            return None
+    
+    async def update_risk_profile(self, profile_id: int, profile: RiskProfile) -> bool:
+        """Update an existing risk profile."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE risk_profiles SET
+                        profile_name = $1,
+                        is_default = $2,
+                        max_risk_per_trade_pct = $3,
+                        daily_loss_pct = $4,
+                        daily_trailing = $5,
+                        overall_loss_pct = $6,
+                        overall_trailing = $7,
+                        overall_trail_from_closed_balance = $8,
+                        profit_lock_pct = $9,
+                        profit_lock_floor_pct = $10,
+                        payout_buffer_pct = $11,
+                        max_concurrent_trades = $12,
+                        commission_per_lot = $13,
+                        safety_buffer_pct = $14,
+                        notes = $15
+                    WHERE profile_id = $16
+                    """,
+                    profile.profile_name, profile.is_default,
+                    profile.max_risk_per_trade_pct, profile.daily_loss_pct, profile.daily_trailing,
+                    profile.overall_loss_pct, profile.overall_trailing, profile.overall_trail_from_closed_balance,
+                    profile.profit_lock_pct, profile.profit_lock_floor_pct, profile.payout_buffer_pct,
+                    profile.max_concurrent_trades, profile.commission_per_lot, profile.safety_buffer_pct,
+                    profile.notes, profile_id
+                )
+                
+                logger.info(f"✓ Updated risk profile ID {profile_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update risk profile {profile_id}: {e}")
+            return False
+    
+    async def delete_risk_profile(self, profile_id: int) -> bool:
+        """Delete a risk profile (only if not in use and not default)."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Check if it's the default profile
+                is_default = await conn.fetchval(
+                    "SELECT is_default FROM risk_profiles WHERE profile_id = $1",
+                    profile_id
+                )
+                
+                if is_default:
+                    logger.warning(f"Cannot delete default risk profile {profile_id}")
+                    return False
+                
+                # Check if any accounts are using it
+                account_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM accounts WHERE risk_profile_id = $1",
+                    profile_id
+                )
+                
+                if account_count > 0:
+                    logger.warning(
+                        f"Cannot delete risk profile {profile_id}: "
+                        f"{account_count} account(s) are using it"
+                    )
+                    return False
+                
+                # Safe to delete
+                await conn.execute(
+                    "DELETE FROM risk_profiles WHERE profile_id = $1",
+                    profile_id
+                )
+                
+                logger.info(f"✓ Deleted risk profile ID {profile_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete risk profile {profile_id}: {e}")
+            return False
+    
+    # ==================== CHANNEL UPDATE METHODS ====================
+    
+    async def update_channel(self, channel_id: int, channel: Channel) -> bool:
+        """Update an existing channel."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE channels SET
+                        display_name = $1,
+                        signal_prefix = $2,
+                        entry_logic_module = $3,
+                        management_logic_module = $4,
+                        priority = $5,
+                        enabled = $6,
+                        notes = $7
+                    WHERE channel_id = $8
+                    """,
+                    channel.display_name, channel.signal_prefix,
+                    channel.entry_logic_module, channel.management_logic_module,
+                    channel.priority, channel.enabled, channel.notes,
+                    channel_id
+                )
+                
+                logger.info(f"✓ Updated channel {channel_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update channel {channel_id}: {e}")
+            return False
+    
+    async def delete_channel(self, channel_id: int) -> bool:
+        """Delete a channel and all related data."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Delete in order (foreign key constraints)
+                await conn.execute("DELETE FROM channel_subscriptions WHERE channel_id = $1", channel_id)
+                await conn.execute("DELETE FROM active_trades WHERE channel_id = $1", channel_id)
+                await conn.execute("DELETE FROM trade_history WHERE channel_id = $1", channel_id)
+                await conn.execute("DELETE FROM waiting_room WHERE channel_id = $1", channel_id)
+                await conn.execute("DELETE FROM message_cache WHERE channel_id = $1", channel_id)
+                await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+                
+                logger.info(f"✓ Deleted channel {channel_id} and all related data")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete channel {channel_id}: {e}")
+            return False
 
 
 # Global database manager instance
