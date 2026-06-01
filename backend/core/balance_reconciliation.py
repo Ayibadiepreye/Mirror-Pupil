@@ -1,0 +1,330 @@
+"""
+Mirror Pupil v5.1 - Balance Reconciliation Monitor
+Polls TradeLocker every 5 minutes to detect withdrawals and balance changes.
+Implements Section 2.9 of the spec.
+"""
+
+import asyncio
+from typing import Optional
+from datetime import datetime
+from loguru import logger
+
+from ..database import DatabaseManager, Account
+from .account_manager import get_account_manager
+
+
+# Threshold for detecting meaningful balance changes (ignore smaller fluctuations)
+WITHDRAWAL_THRESHOLD = 0.50  # $0.50
+
+
+class BalanceReconciliationMonitor:
+    """
+    Monitors account balances every 5 minutes to detect external changes.
+    
+    Features:
+    - Polls TradeLocker API every 5 minutes per account
+    - Detects withdrawals (balance drop without closed trade)
+    - Detects deposits/corrections (balance increase)
+    - Updates current_balance and last_synced_balance
+    - Does NOT change highest_banked_balance (floor never moves down)
+    - Does NOT change daily_start_balance (daily floor is static)
+    - Sends WARNING notifications on withdrawal
+    - Broadcasts WebSocket events for GUI updates
+    
+    Per spec Section 2.9:
+    - Withdrawal: balance drops, floor stays same, headroom decreases
+    - Formal payout reset: everything resets (separate GUI action)
+    """
+    
+    def __init__(self, db: DatabaseManager):
+        self.db = db
+        self.account_manager = get_account_manager()
+        self.monitor_task: Optional[asyncio.Task] = None
+        
+        # Configuration (per spec Section 2.9)
+        self.poll_interval = 300  # 5 minutes = 300 seconds
+        
+        logger.info("Initialized BalanceReconciliationMonitor")
+    
+    async def start_monitoring(self):
+        """Start background monitoring task."""
+        if self.monitor_task:
+            logger.warning("Balance reconciliation already running")
+            return
+        
+        self.monitor_task = asyncio.create_task(self._monitoring_loop())
+        logger.info(f"✓ Started balance reconciliation (every {self.poll_interval}s)")
+    
+    async def stop_monitoring(self):
+        """Stop background monitoring task."""
+        if self.monitor_task:
+            self.monitor_task.cancel()
+            try:
+                await self.monitor_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("✓ Stopped balance reconciliation")
+    
+    async def _monitoring_loop(self):
+        """Main monitoring loop - runs every 5 minutes."""
+        while True:
+            try:
+                await asyncio.sleep(self.poll_interval)
+                await self._reconcile_all_accounts()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Balance reconciliation error: {e}")
+    
+    async def _reconcile_all_accounts(self):
+        """Reconcile balances for all active accounts."""
+        accounts = await self.db.get_all_accounts()
+        
+        for account in accounts:
+            if account.breached or account.paused:
+                continue  # Skip breached/paused accounts
+            
+            try:
+                await self._reconcile_account(account)
+            except Exception as e:
+                logger.error(
+                    f"Failed to reconcile account {account.account_key}: {e}"
+                )
+    
+    async def _reconcile_account(self, account: Account):
+        """
+        Reconcile a single account's balance.
+        
+        Compares actual TradeLocker balance vs last_synced_balance.
+        Detects withdrawals and deposits.
+        """
+        # Get actual balance from TradeLocker
+        tl_client = self.account_manager.get_client(account.credential_key)
+        if not tl_client:
+            logger.warning(
+                f"No TradeLocker client for {account.account_key}"
+            )
+            return
+        
+        try:
+            # Poll actual balance
+            account_info = await tl_client.get_account(account.tl_account_id)
+            actual_balance = float(account_info.get('balance', 0))
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to fetch balance for {account.account_key}: {e}"
+            )
+            return
+        
+        # Compare to expected balance
+        expected_balance = account.last_synced_balance or account.current_balance
+        delta = expected_balance - actual_balance
+        
+        # Check for meaningful changes
+        if abs(delta) < WITHDRAWAL_THRESHOLD:
+            # Normal - just sync
+            await self.db.update_account(
+                account.account_key,
+                last_synced_balance=actual_balance
+            )
+            return
+        
+        # Meaningful change detected
+        if delta > WITHDRAWAL_THRESHOLD:
+            # Balance dropped - withdrawal detected
+            await self._handle_withdrawal(account, actual_balance, delta)
+        
+        elif actual_balance > account.current_balance + WITHDRAWAL_THRESHOLD:
+            # Balance increased - deposit or correction
+            await self._handle_deposit(account, actual_balance)
+    
+    async def _handle_withdrawal(
+        self,
+        account: Account,
+        actual_balance: float,
+        withdrawn: float
+    ):
+        """
+        Handle detected withdrawal.
+        
+        Per spec Section 2.9:
+        - current_balance → actual_balance (balance is lower)
+        - last_synced_balance → actual_balance (sync reference)
+        - highest_banked_balance → UNCHANGED (floor never moves down)
+        - daily_start_balance → UNCHANGED (daily floor is static until 5pm)
+        - profit_locked → UNCHANGED (lock status unaffected)
+        - initial_balance → UNCHANGED (only changes on formal reset)
+        """
+        logger.warning(
+            f"[WITHDRAWAL DETECTED] {account.account_key}: "
+            f"−${withdrawn:.2f} (${expected_balance:.2f} → ${actual_balance:.2f})"
+        )
+        
+        # Update balances (but NOT floors or profit lock)
+        await self.db.update_account(
+            account.account_key,
+            current_balance=actual_balance,
+            last_synced_balance=actual_balance
+        )
+        
+        # Recalculate headroom
+        overall_floor = self._calculate_overall_floor(account)
+        daily_floor = self._calculate_daily_floor(account)
+        
+        # Get floating P&L
+        floating_pnl = await self._get_floating_pnl(account)
+        current_equity = actual_balance + floating_pnl
+        
+        overall_room = actual_balance - overall_floor
+        daily_room = current_equity - daily_floor
+        
+        # Calculate new withdrawable amount
+        withdrawable = self._calculate_withdrawable(account, actual_balance)
+        
+        # Send WARNING notification
+        message = (
+            f"Withdrawal detected on {account.display_name or account.account_key}: "
+            f"−${withdrawn:.2f}. "
+            f"Balance: ${actual_balance:.2f}. "
+            f"Overall room: ${overall_room:.2f}. "
+            f"Daily room: ${daily_room:.2f}. "
+            f"New withdrawable: ${withdrawable:.2f}."
+        )
+        
+        await self._notify_gui(message, severity="WARNING", account_key=account.account_key)
+        
+        # Broadcast WebSocket event for GUI update
+        await self._broadcast_balance_update(
+            account=account,
+            actual_balance=actual_balance,
+            floating_pnl=floating_pnl,
+            withdrawable=withdrawable,
+            overall_floor=overall_floor,
+            daily_floor=daily_floor
+        )
+    
+    async def _handle_deposit(self, account: Account, actual_balance: float):
+        """
+        Handle detected deposit or balance correction.
+        
+        Updates current_balance only - does NOT touch highest_banked_balance.
+        """
+        increase = actual_balance - account.current_balance
+        
+        logger.info(
+            f"[BALANCE INCREASE] {account.account_key}: "
+            f"+${increase:.2f} (${account.current_balance:.2f} → ${actual_balance:.2f})"
+        )
+        
+        # Update balances
+        await self.db.update_account(
+            account.account_key,
+            current_balance=actual_balance,
+            last_synced_balance=actual_balance
+        )
+        
+        # Send INFO notification
+        message = (
+            f"Balance increase detected on {account.display_name or account.account_key}: "
+            f"+${increase:.2f}"
+        )
+        
+        await self._notify_gui(message, severity="INFO", account_key=account.account_key)
+    
+    def _calculate_overall_floor(self, account: Account) -> float:
+        """Calculate overall floor (trails from highest_banked_balance)."""
+        # Get risk profile
+        profile = self._get_risk_profile(account)
+        
+        if account.profit_locked:
+            # Profit lock active - floor locked at initial_balance
+            return account.initial_balance * (1 - (profile.profit_lock_floor_pct or 0) / 100)
+        
+        if profile.overall_trailing:
+            # Trailing from highest_banked_balance (Blue Guardian model)
+            trail_ref = account.highest_banked_balance
+            return trail_ref - (account.initial_balance * profile.overall_loss_pct / 100)
+        else:
+            # Static floor
+            return account.initial_balance * (1 - profile.overall_loss_pct / 100)
+    
+    def _calculate_daily_floor(self, account: Account) -> float:
+        """Calculate daily floor (static for the day)."""
+        profile = self._get_risk_profile(account)
+        return account.daily_start_balance - (account.initial_balance * profile.daily_loss_pct / 100)
+    
+    def _calculate_withdrawable(self, account: Account, current_balance: float) -> float:
+        """Calculate maximum safe withdrawal amount."""
+        profile = self._get_risk_profile(account)
+        payout_buffer = account.initial_balance * (profile.payout_buffer_pct / 100)
+        
+        overall_floor = self._calculate_overall_floor(account)
+        withdrawable = current_balance - overall_floor - payout_buffer
+        
+        return max(withdrawable, 0.0)
+    
+    def _get_risk_profile(self, account: Account):
+        """Get account's risk profile (placeholder - implement based on your risk module)."""
+        # TODO: Import and use actual risk profile resolution
+        # For now, return a mock profile with Blue Guardian defaults
+        from dataclasses import dataclass
+        
+        @dataclass
+        class MockProfile:
+            daily_loss_pct: float = 3.0
+            overall_loss_pct: float = 6.0
+            overall_trailing: bool = True
+            profit_lock_floor_pct: float = 0.0
+            payout_buffer_pct: float = 1.0
+        
+        return MockProfile()
+    
+    async def _get_floating_pnl(self, account: Account) -> float:
+        """Get floating P&L for account (placeholder)."""
+        # TODO: Implement actual floating P&L calculation
+        # For now, return 0
+        return 0.0
+    
+    async def _notify_gui(self, message: str, severity: str, account_key: str):
+        """Send notification to GUI (placeholder)."""
+        # TODO: Implement actual GUI notification system
+        logger.log(severity, message)
+    
+    async def _broadcast_balance_update(
+        self,
+        account: Account,
+        actual_balance: float,
+        floating_pnl: float,
+        withdrawable: float,
+        overall_floor: float,
+        daily_floor: float
+    ):
+        """Broadcast balance update via WebSocket (placeholder)."""
+        # TODO: Implement actual WebSocket broadcast
+        payload = {
+            "type": "balance_updated",
+            "account_key": account.account_key,
+            "current_balance": actual_balance,
+            "daily_pnl": account.daily_pnl,
+            "equity": actual_balance + floating_pnl,
+            "withdrawable": withdrawable,
+            "overall_floor": overall_floor,
+            "daily_floor": daily_floor,
+        }
+        logger.debug(f"[WS] Balance update: {payload}")
+
+
+# Singleton instance
+_monitor: Optional[BalanceReconciliationMonitor] = None
+
+
+def get_balance_monitor(db: Optional[DatabaseManager] = None) -> BalanceReconciliationMonitor:
+    """Get or create singleton balance reconciliation monitor."""
+    global _monitor
+    if _monitor is None:
+        if db is None:
+            raise ValueError("DatabaseManager required for first initialization")
+        _monitor = BalanceReconciliationMonitor(db)
+    return _monitor

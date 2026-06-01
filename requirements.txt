@@ -1,0 +1,43 @@
+# ============================================
+# Mirror Pupil v5.1 - Python Dependencies
+# ============================================
+
+# Telegram Client (TDLib-based)
+pytdbot==0.8.5
+
+# TradeLocker SDK
+tradelocker==1.0.0
+
+# Database
+asyncpg==0.29.0  # Async PostgreSQL driver for Neon
+psycopg2-binary==2.9.9  # Sync PostgreSQL driver (fallback)
+sqlalchemy==2.0.23  # ORM
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+
+# HTTP Client
+aiohttp==3.9.1
+httpx==0.25.2
+
+# Environment & Config
+python-dotenv==1.0.0
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+cryptography==41.0.7  # For password encryption
+
+# Logging
+loguru==0.7.2
+
+# Data Processing
+pandas==2.1.4  # TradeLocker SDK returns DataFrames
+
+# Testing (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1

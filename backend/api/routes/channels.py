@@ -1,0 +1,216 @@
+"""
+Mirror Pupil v5.1 - Channels API Routes
+CRUD operations for signal channels.
+"""
+
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from loguru import logger
+
+from ...database import DatabaseManager, Channel
+from ..main import get_db
+
+
+router = APIRouter()
+
+
+# Request/Response Models
+class ChannelCreate(BaseModel):
+    """Request model for creating a new channel."""
+    channel_id: int
+    display_name: str
+    signal_prefix: str
+    entry_logic_module: str
+    management_logic_module: str
+    priority: int = 10
+    enabled: bool = True
+    notes: Optional[str] = None
+
+
+class ChannelUpdate(BaseModel):
+    """Request model for updating a channel."""
+    display_name: Optional[str] = None
+    signal_prefix: Optional[str] = None
+    entry_logic_module: Optional[str] = None
+    management_logic_module: Optional[str] = None
+    priority: Optional[int] = None
+    enabled: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class ChannelResponse(BaseModel):
+    """Response model for channel data."""
+    channel_id: int
+    display_name: str
+    signal_prefix: str
+    entry_logic_module: str
+    management_logic_module: str
+    priority: int
+    enabled: bool
+    notes: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/", response_model=List[ChannelResponse])
+async def get_all_channels(db: DatabaseManager = Depends(get_db)):
+    """
+    Get all channels.
+    
+    Returns:
+        List of all channels
+    """
+    try:
+        channels = await db.get_all_channels()
+        return [ChannelResponse.model_validate(ch) for ch in channels]
+    except Exception as e:
+        logger.error(f"Failed to get channels: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get channels: {str(e)}"
+        )
+
+
+@router.get("/{channel_id}", response_model=ChannelResponse)
+async def get_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+    """
+    Get a specific channel by ID.
+    
+    Args:
+        channel_id: Numeric Telegram channel ID
+    
+    Returns:
+        Channel details
+    """
+    try:
+        channel = await db.get_channel(channel_id)
+        if not channel:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Channel not found: {channel_id}"
+            )
+        return ChannelResponse.model_validate(channel)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get channel {channel_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get channel: {str(e)}"
+        )
+
+
+@router.post("/", response_model=ChannelResponse, status_code=status.HTTP_201_CREATED)
+async def create_channel(channel_data: ChannelCreate, db: DatabaseManager = Depends(get_db)):
+    """
+    Create a new channel.
+    
+    Args:
+        channel_data: Channel creation data
+    
+    Returns:
+        Created channel details
+    """
+    try:
+        # Create Channel object
+        channel = Channel(
+            channel_id=channel_data.channel_id,
+            display_name=channel_data.display_name,
+            signal_prefix=channel_data.signal_prefix,
+            entry_logic_module=channel_data.entry_logic_module,
+            management_logic_module=channel_data.management_logic_module,
+            priority=channel_data.priority,
+            enabled=channel_data.enabled,
+            notes=channel_data.notes
+        )
+        
+        # Add to database
+        success = await db.add_channel(channel)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to create channel (may already exist)"
+            )
+        
+        # Sync channel subscriptions
+        await db.sync_channel_subscriptions()
+        
+        logger.info(f"✓ Created channel: {channel_data.display_name} ({channel_data.channel_id})")
+        return ChannelResponse.model_validate(channel)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create channel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create channel: {str(e)}"
+        )
+
+
+@router.post("/{channel_id}/enable", response_model=ChannelResponse)
+async def enable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+    """
+    Enable a channel (start listening to messages).
+    
+    Args:
+        channel_id: Channel ID
+    
+    Returns:
+        Updated channel details
+    """
+    try:
+        success = await db.update_channel_enabled(channel_id, True)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Channel not found: {channel_id}"
+            )
+        
+        channel = await db.get_channel(channel_id)
+        logger.info(f"✓ Enabled channel: {channel_id}")
+        return ChannelResponse.model_validate(channel)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to enable channel {channel_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enable channel: {str(e)}"
+        )
+
+
+@router.post("/{channel_id}/disable", response_model=ChannelResponse)
+async def disable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+    """
+    Disable a channel (stop listening to messages).
+    
+    Args:
+        channel_id: Channel ID
+    
+    Returns:
+        Updated channel details
+    """
+    try:
+        success = await db.update_channel_enabled(channel_id, False)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Channel not found: {channel_id}"
+            )
+        
+        channel = await db.get_channel(channel_id)
+        logger.info(f"✓ Disabled channel: {channel_id}")
+        return ChannelResponse.model_validate(channel)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to disable channel {channel_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disable channel: {str(e)}"
+        )
