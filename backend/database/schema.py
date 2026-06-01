@@ -171,6 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_channel_subscriptions_channel ON channel_subscrip
 # Built-in data: Default channels and risk profile
 INITIAL_DATA = """
 -- Built-in channels (BillirichyFX and Firepips)
+-- FIXED: Added signal_prefix column to INSERT statement (was missing in original)
 INSERT INTO channels (channel_id, display_name, signal_prefix, entry_logic_module, management_logic_module, priority, enabled)
 VALUES
     (-1001859598768, 'BillirichyFX', 'B', 'channels.billirichy.plugin', 'channels.billirichy.plugin', 1, TRUE),

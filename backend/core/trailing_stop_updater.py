@@ -148,7 +148,15 @@ class TrailingStopUpdater:
             return
         
         # Get TradeLocker client
-        tl_client = self.account_manager.get_client_for_account(trade.account_key)
+        # FIXED: Use get_account() instead of non-existent get_client_for_account()
+        account = self.account_manager.get_account(trade.account_key)
+        if not account:
+            logger.warning(
+                f"No account found for {trade.account_key}"
+            )
+            return
+        
+        tl_client = account['client']
         if not tl_client:
             logger.warning(
                 f"No TradeLocker client for {trade.account_key}"
@@ -204,15 +212,12 @@ class TrailingStopUpdater:
     async def _get_market_price(self, tl_client, symbol: str) -> Optional[float]:
         """Get current market price for symbol."""
         try:
-            # Get current bid/ask
-            quote = await tl_client.get_quote(symbol)
+            # FIXED: Use get_market_price() method from TradeLockerClient
+            # instead of non-existent get_quote() method
+            market_price = await tl_client.get_market_price(symbol)
             
-            # Use mid-price
-            bid = float(quote.get('bid', 0))
-            ask = float(quote.get('ask', 0))
-            
-            if bid > 0 and ask > 0:
-                return (bid + ask) / 2
+            if market_price and market_price > 0:
+                return market_price
             
             return None
             
