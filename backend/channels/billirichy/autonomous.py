@@ -236,16 +236,27 @@ class BillirichyAutonomousManager:
             
             # Get actual exit price from closed position
             try:
-                position_info = await tl_client.get_position(trade.tl_position_id)
-                exit_price = float(position_info.get('closePrice', trade.entry_price))
+                # Get all positions and find this one
+                all_positions = await tl_client.get_all_positions()
+                position_info = next(
+                    (p for p in all_positions if p.get('id') == trade.tl_position_id),
+                    None
+                )
+                
+                if position_info:
+                    exit_price = float(position_info.get('closePrice', trade.entry_price))
+                else:
+                    # Position already closed, use market price
+                    raise ValueError("Position already closed")
             except:
                 # Fallback: get current market price
                 try:
-                    quote = await tl_client.get_quote(trade.symbol)
-                    if trade.direction == 'BUY':
-                        exit_price = float(quote.get('bid', trade.entry_price))
+                    # Use existing get_market_price method
+                    market_price = await tl_client.get_market_price(trade.symbol)
+                    if market_price:
+                        exit_price = market_price
                     else:
-                        exit_price = float(quote.get('ask', trade.entry_price))
+                        exit_price = trade.entry_price
                 except:
                     exit_price = trade.entry_price  # Last resort fallback
             
@@ -288,22 +299,19 @@ class BillirichyAutonomousManager:
             if not tl_client:
                 return False
             
-            quote = await tl_client.get_quote(trade.symbol)
-            bid = float(quote.get('bid', 0))
-            ask = float(quote.get('ask', 0))
+            # Use existing get_market_price method
+            market_price = await tl_client.get_market_price(trade.symbol)
             
-            if bid <= 0 or ask <= 0:
+            if not market_price or market_price <= 0:
                 return False
             
-            # Calculate floating P&L
+            # Calculate profit in pips
             if trade.direction == 'BUY':
-                current_price = bid
-                pnl_pips = (current_price - trade.entry_price) * 10000  # Rough pip calculation
+                profit_pips = (market_price - trade.entry_price) * 10000
             else:  # SELL
-                current_price = ask
-                pnl_pips = (trade.entry_price - current_price) * 10000
+                profit_pips = (trade.entry_price - market_price) * 10000
             
-            return pnl_pips > 0
+            return profit_pips > 0
             
         except Exception as e:
             logger.error(f"Failed to check profit for {trade.signal_id}: {e}")
@@ -320,20 +328,17 @@ class BillirichyAutonomousManager:
             if not tl_client:
                 return False
             
-            quote = await tl_client.get_quote(trade.symbol)
-            bid = float(quote.get('bid', 0))
-            ask = float(quote.get('ask', 0))
+            # Use existing get_market_price method
+            market_price = await tl_client.get_market_price(trade.symbol)
             
-            if bid <= 0 or ask <= 0:
+            if not market_price or market_price <= 0:
                 return False
             
             # Calculate profit in pips
             if trade.direction == 'BUY':
-                current_price = bid
-                profit_pips = (current_price - trade.entry_price) * 10000
+                profit_pips = (market_price - trade.entry_price) * 10000
             else:  # SELL
-                current_price = ask
-                profit_pips = (trade.entry_price - current_price) * 10000
+                profit_pips = (trade.entry_price - market_price) * 10000
             
             # Get threshold for this symbol
             threshold = self.be_profit_threshold.get(

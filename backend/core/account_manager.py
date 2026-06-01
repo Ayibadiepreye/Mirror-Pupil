@@ -125,6 +125,19 @@ class AccountManager:
         """Get account info by account key."""
         return self.accounts.get(account_key)
     
+    def get_client_for_account(self, account_key: str) -> Optional[TradeLockerClient]:
+        """
+        Get TradeLocker client for a specific account.
+        
+        Args:
+            account_key: Account key (format: email:account_id)
+        
+        Returns:
+            TradeLockerClient instance or None if account not found
+        """
+        account = self.get_account(account_key)
+        return account['client'] if account else None
+    
     def get_all_accounts(self) -> List[Dict]:
         """Get all registered accounts."""
         return list(self.accounts.values())
