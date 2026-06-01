@@ -1,11 +1,19 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { Home, Users, TrendingUp, Settings, Power, Bell } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../lib/api'
 
 export default function Layout() {
   const location = useLocation()
   
-  // Fetch notification count (mock for now)
-  const notificationCount = 0
+  // Fetch notification count
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => api.getNotifications(),
+    refetchInterval: 10000, // Refresh every 10 seconds
+  })
+  
+  const notificationCount = notifications.length
   
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/')

@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Power, AlertTriangle, PlayCircle, StopCircle, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api'
 
 export default function BotControl() {
+  const queryClient = useQueryClient()
   const [showForceCloseModal, setShowForceCloseModal] = useState(false)
+  const [forceCloseTarget, setForceCloseTarget] = useState<string | null>(null)
   
   const { data: botStatus } = useQuery({
     queryKey: ['bot-status'],
@@ -22,8 +24,53 @@ export default function BotControl() {
     queryFn: api.getChannels,
   })
   
+  const controlBotMutation = useMutation({
+    mutationFn: (action: 'start' | 'stop') => api.controlBot(action),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bot-status'] })
+    },
+  })
+  
+  const forceCloseAllMutation = useMutation({
+    mutationFn: () => api.forceCloseAllPositions(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-trades'] })
+      queryClient.invalidateQueries({ queryKey: ['bot-status'] })
+      setShowForceCloseModal(false)
+    },
+  })
+  
+  const forceCloseAccountMutation = useMutation({
+    mutationFn: (accountKey: string) => api.forceCloseAccountPositions(accountKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-trades'] })
+      queryClient.invalidateQueries({ queryKey: ['bot-status'] })
+      setShowForceCloseModal(false)
+    },
+  })
+  
+  const skipSignalMutation = useMutation({
+    mutationFn: (channelId: number) => api.skipNextSignal(channelId),
+  })
+  
   const isRunning = botStatus?.status === 'running'
   const isDryRun = botStatus?.dry_run || false
+  
+  const handleBotControl = () => {
+    controlBotMutation.mutate(isRunning ? 'stop' : 'start')
+  }
+  
+  const handleForceClose = () => {
+    if (forceCloseTarget) {
+      forceCloseAccountMutation.mutate(forceCloseTarget)
+    } else {
+      forceCloseAllMutation.mutate()
+    }
+  }
+  
+  const handleSkipSignal = (channelId: number) => {
+    skipSignalMutation.mutate(channelId)
+  }
   
   return (
     <div className="space-y-6">
@@ -51,13 +98,17 @@ export default function BotControl() {
         
         <button
           type="button"
+          onClick={handleBotControl}
+          disabled={controlBotMutation.isPending}
           className={`w-full py-3 rounded-lg font-semibold text-white transition-all ${
             isRunning
               ? 'bg-red-600 hover:bg-red-700'
               : 'bg-green-600 hover:bg-green-700'
-          }`}
+          } disabled:opacity-50`}
         >
-          {isRunning ? (
+          {controlBotMutation.isPending ? (
+            'Processing...'
+          ) : isRunning ? (
             <>
               <StopCircle size={20} className="inline mr-2" />
               Stop Bot
@@ -152,7 +203,10 @@ export default function BotControl() {
         
         <button
           type="button"
-          onClick={() => setShowForceCloseModal(true)}
+          onClick={() => {
+            setForceCloseTarget(null)
+            setShowForceCloseModal(true)
+          }}
           className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all"
         >
           Force Close All Positions ({botStatus?.total_active_trades || 0})
@@ -165,6 +219,10 @@ export default function BotControl() {
               <button
                 key={account.account_key}
                 type="button"
+                onClick={() => {
+                  setForceCloseTarget(account.account_key)
+                  setShowForceCloseModal(true)
+                }}
                 className="w-full py-2 bg-kob-app hover:bg-kob-base text-kob-text rounded-lg text-sm transition-all"
               >
                 Close {account.display_name || account.account_key}
@@ -187,9 +245,11 @@ export default function BotControl() {
               <button
                 key={channel.channel_id}
                 type="button"
-                className="w-full py-2 bg-kob-app hover:bg-kob-base text-kob-text rounded-lg text-sm transition-all"
+                onClick={() => handleSkipSignal(channel.channel_id)}
+                disabled={skipSignalMutation.isPending}
+                className="w-full py-2 bg-kob-app hover:bg-kob-base text-kob-text rounded-lg text-sm transition-all disabled:opacity-50"
               >
-                Skip next from {channel.display_name}
+                {skipSignalMutation.isPending ? 'Processing...' : `Skip next from ${channel.display_name}`}
               </button>
             ))}
           </div>
@@ -206,27 +266,30 @@ export default function BotControl() {
                 Force Close All Positions?
               </h3>
               <p className="text-kob-text-dim mb-6">
-                This will immediately close all {botStatus?.total_active_trades || 0} active trades.
+                This will immediately close all {botStatus?.total_active_trades || 0} active trades
+                {forceCloseTarget && ` for this account`}.
                 This action cannot be undone.
               </p>
               
               <div className="flex gap-3 w-full">
                 <button
                   type="button"
-                  onClick={() => setShowForceCloseModal(false)}
-                  className="flex-1 py-2 bg-kob-app text-kob-text rounded-lg hover:bg-kob-base"
+                  onClick={() => {
+                    setShowForceCloseModal(false)
+                    setForceCloseTarget(null)
+                  }}
+                  disabled={forceCloseAllMutation.isPending || forceCloseAccountMutation.isPending}
+                  className="flex-1 py-2 bg-kob-app text-kob-text rounded-lg hover:bg-kob-base disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    // Force close logic would go here
-                    setShowForceCloseModal(false)
-                  }}
-                  className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  onClick={handleForceClose}
+                  disabled={forceCloseAllMutation.isPending || forceCloseAccountMutation.isPending}
+                  className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                 >
-                  Force Close
+                  {(forceCloseAllMutation.isPending || forceCloseAccountMutation.isPending) ? 'Closing...' : 'Force Close'}
                 </button>
               </div>
             </div>

@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, AlertCircle, Info, X, ChevronDown, ChevronUp, Bell } from 'lucide-react'
+import { api } from '../lib/api'
 
-// Mock notification type
+// Notification type from backend
 interface Notification {
   id: number
   severity: 'CRITICAL' | 'HIGH' | 'WARNING' | 'INFO'
@@ -11,40 +13,34 @@ interface Notification {
   details?: any
 }
 
-// Mock data - in real app this would come from API
-const mockNotifications: Notification[] = [
-  {
-    id: 1,
-    severity: 'INFO',
-    message: 'Bot started successfully',
-    timestamp: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    severity: 'WARNING',
-    message: 'Daily loss limit approaching for account',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    account_key: 'test@example.com:12345',
-  },
-]
-
 export default function Notifications() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications)
+  const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'WARNING' | 'INFO'>('ALL')
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
   
-  const filteredNotifications = filter === 'ALL'
-    ? notifications
-    : notifications.filter(n => n.severity === filter)
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications', filter],
+    queryFn: () => api.getNotifications(filter === 'ALL' ? undefined : filter),
+    refetchInterval: 5000,
+  })
   
-  const criticalNotifications = notifications.filter(n => n.severity === 'CRITICAL')
+  const dismissMutation = useMutation({
+    mutationFn: (id: number) => api.dismissNotification(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    },
+  })
+  
+  const filteredNotifications = notifications
+  
+  const criticalNotifications = notifications.filter((n: Notification) => n.severity === 'CRITICAL')
   
   const counts = {
     ALL: notifications.length,
-    CRITICAL: notifications.filter(n => n.severity === 'CRITICAL').length,
-    HIGH: notifications.filter(n => n.severity === 'HIGH').length,
-    WARNING: notifications.filter(n => n.severity === 'WARNING').length,
-    INFO: notifications.filter(n => n.severity === 'INFO').length,
+    CRITICAL: notifications.filter((n: Notification) => n.severity === 'CRITICAL').length,
+    HIGH: notifications.filter((n: Notification) => n.severity === 'HIGH').length,
+    WARNING: notifications.filter((n: Notification) => n.severity === 'WARNING').length,
+    INFO: notifications.filter((n: Notification) => n.severity === 'INFO').length,
   }
   
   const toggleExpand = (id: number) => {
@@ -58,7 +54,7 @@ export default function Notifications() {
   }
   
   const dismissNotification = (id: number) => {
-    setNotifications(notifications.filter(n => n.id !== id))
+    dismissMutation.mutate(id)
   }
   
   const getSeverityIcon = (severity: string) => {
@@ -120,7 +116,7 @@ export default function Notifications() {
             <h3 className="text-lg font-semibold text-red-400">Critical Alerts</h3>
           </div>
           <div className="space-y-2">
-            {criticalNotifications.map((notification) => (
+            {criticalNotifications.map((notification: Notification) => (
               <div key={notification.id} className="flex items-start justify-between bg-kob-base/50 rounded p-3">
                 <div className="flex-1">
                   <p className="text-kob-text text-sm">{notification.message}</p>
@@ -161,7 +157,7 @@ export default function Notifications() {
       
       {/* Notification List */}
       <div className="space-y-3">
-        {filteredNotifications.map((notification) => {
+        {filteredNotifications.map((notification: Notification) => {
           const isExpanded = expandedIds.has(notification.id)
           
           return (

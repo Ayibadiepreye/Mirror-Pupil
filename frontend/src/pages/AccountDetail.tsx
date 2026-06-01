@@ -1,11 +1,15 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, TrendingUp, TrendingDown, Shield } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, TrendingUp, TrendingDown, Shield, X } from 'lucide-react'
 import { api } from '../lib/api'
+import { useState } from 'react'
 
 export default function AccountDetail() {
   const { accountKey } = useParams<{ accountKey: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [showPayoutModal, setShowPayoutModal] = useState(false)
+  const [newBalance, setNewBalance] = useState('')
   
   const { data: account, isLoading } = useQuery({
     queryKey: ['account', accountKey],
@@ -29,6 +33,30 @@ export default function AccountDetail() {
     queryKey: ['risk-profiles'],
     queryFn: api.getRiskProfiles,
   })
+  
+  const payoutResetMutation = useMutation({
+    mutationFn: (balance: number) => api.resetPayout(accountKey!, balance),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['account', accountKey] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      setShowPayoutModal(false)
+      setNewBalance('')
+    },
+  })
+  
+  const handlePayoutReset = () => {
+    const balance = parseFloat(newBalance)
+    if (isNaN(balance) || balance <= 0) {
+      alert('Please enter a valid balance')
+      return
+    }
+    
+    if (!confirm(`Reset account to $${balance.toFixed(2)}? This will reset all balance tracking.`)) {
+      return
+    }
+    
+    payoutResetMutation.mutate(balance)
+  }
   
   if (isLoading || !account) {
     return (
@@ -278,11 +306,73 @@ export default function AccountDetail() {
         </p>
         <button
           type="button"
+          onClick={() => setShowPayoutModal(true)}
           className="w-full py-3 bg-kob-red hover:bg-kob-red/90 text-white rounded-lg font-semibold transition-all"
         >
           Payout Reset
         </button>
       </div>
+      
+      {/* Payout Reset Modal */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-kob-base rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-kob-text">Payout Reset</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPayoutModal(false)
+                  setNewBalance('')
+                }}
+                className="text-kob-text-dim hover:text-kob-text"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p className="text-kob-text-dim mb-4">
+              Enter the new starting balance after withdrawing profits. This will reset all balance tracking fields.
+            </p>
+            
+            <div className="mb-6">
+              <label className="block text-sm text-kob-text-dim mb-2">
+                New Balance ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={newBalance}
+                onChange={(e) => setNewBalance(e.target.value)}
+                className="w-full bg-kob-app border border-kob-border rounded px-3 py-2 text-kob-text"
+                placeholder="Enter new balance"
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPayoutModal(false)
+                  setNewBalance('')
+                }}
+                disabled={payoutResetMutation.isPending}
+                className="flex-1 py-2 bg-kob-app text-kob-text rounded-lg hover:bg-kob-base disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePayoutReset}
+                disabled={payoutResetMutation.isPending || !newBalance}
+                className="flex-1 py-2 bg-kob-red text-white rounded-lg hover:bg-kob-red/90 disabled:opacity-50"
+              >
+                {payoutResetMutation.isPending ? 'Resetting...' : 'Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
