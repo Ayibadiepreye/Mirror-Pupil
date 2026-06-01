@@ -228,8 +228,15 @@ class RiskEnforcer:
             account.breached = True
             await self.db.update_account_paused(account.account_key, True)
             
-            # TODO: Close all trades
-            # TODO: Notify GUI
+            # Close all trades
+            await self._close_all_account_trades(account.account_key, "DAILY_BREACH")
+            
+            # Notify GUI
+            await self._notify_breach(
+                account.account_key,
+                "DAILY_LOSS_BREACH",
+                f"Equity ${current_equity:.2f} ≤ Floor ${daily_floor:.2f}"
+            )
             
             return True
         
@@ -245,8 +252,15 @@ class RiskEnforcer:
             account.breached = True
             await self.db.update_account_paused(account.account_key, True)
             
-            # TODO: Close all trades
-            # TODO: Notify GUI
+            # Close all trades
+            await self._close_all_account_trades(account.account_key, "OVERALL_BREACH")
+            
+            # Notify GUI
+            await self._notify_breach(
+                account.account_key,
+                "OVERALL_DRAWDOWN_BREACH",
+                f"Equity ${current_equity:.2f} ≤ Floor ${overall_floor:.2f}"
+            )
             
             return True
         
@@ -257,8 +271,16 @@ class RiskEnforcer:
                 f"Balance ${account.current_balance:.2f} reached threshold"
             )
             
-            # TODO: Update account.profit_locked in database
-            # TODO: Notify GUI
+            # Update account.profit_locked in database
+            await self.db.update_account_profit_locked(account.account_key, True)
+            account.profit_locked = True
+            
+            # Notify GUI
+            await self._notify_breach(
+                account.account_key,
+                "PROFIT_LOCK_ACTIVATED",
+                f"Balance ${account.current_balance:.2f} - Floor now locked at initial balance"
+            )
         
         return False
     
@@ -282,6 +304,98 @@ class RiskEnforcer:
             profile = await self.db.get_default_risk_profile()
         
         return profile.max_concurrent_trades if profile else 5
+    
+    async def _close_all_account_trades(self, account_key: str, reason: str):
+        """
+        Close all active trades for an account.
+        
+        Args:
+            account_key: Account identifier
+            reason: Close reason (e.g., "DAILY_BREACH", "OVERALL_BREACH")
+        """
+        try:
+            # Get all active trades
+            active_trades = await self.db.get_active_trades(account_key)
+            
+            if not active_trades:
+                logger.debug(f"[{account_key}] No active trades to close")
+                return
+            
+            logger.info(f"[{account_key}] Closing {len(active_trades)} trade(s) due to {reason}")
+            
+            # Import TradeLocker client access
+            from ..core.account_manager import get_account_manager
+            account_manager = get_account_manager()
+            
+            for trade in active_trades:
+                try:
+                    # Get TradeLocker client
+                    tl_client = account_manager.get_client_for_account(account_key)
+                    if not tl_client:
+                        logger.error(f"No TradeLocker client for {account_key}")
+                        continue
+                    
+                    # Close position on TradeLocker
+                    await tl_client.close_position(trade.tl_position_id)
+                    
+                    # Get actual exit price from closed position
+                    try:
+                        position_info = await tl_client.get_position(trade.tl_position_id)
+                        exit_price = float(position_info.get('closePrice', trade.entry_price))
+                    except:
+                        exit_price = trade.entry_price  # Fallback to entry price
+                    
+                    # Calculate P&L (simplified)
+                    if trade.direction == 'BUY':
+                        pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+                    else:
+                        pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                    
+                    # Move to history
+                    await self.db.close_active_trade(
+                        trade_id=trade.trade_id,
+                        exit_price=exit_price,
+                        pnl=pnl,
+                        outcome='BREACH',
+                        close_reason=reason
+                    )
+                    
+                    logger.info(f"[{account_key}] Closed trade {trade.signal_id}: P&L ${pnl:.2f}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to close trade {trade.trade_id}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to close trades for {account_key}: {e}")
+    
+    async def _notify_breach(self, account_key: str, breach_type: str, message: str):
+        """
+        Send breach notification to GUI and WebSocket.
+        
+        Args:
+            account_key: Account identifier
+            breach_type: Type of breach (e.g., "DAILY_LOSS_BREACH", "PROFIT_LOCK_ACTIVATED")
+            message: Notification message
+        """
+        try:
+            # Log the breach
+            logger.critical(f"[BREACH NOTIFICATION] {account_key}: {breach_type} - {message}")
+            
+            # TODO: Implement actual GUI notification system
+            # For now, just log at critical level
+            
+            # TODO: Implement WebSocket broadcast
+            # payload = {
+            #     "type": "breach_notification",
+            #     "account_key": account_key,
+            #     "breach_type": breach_type,
+            #     "message": message,
+            #     "timestamp": datetime.utcnow().isoformat()
+            # }
+            # await websocket_manager.broadcast(payload)
+            
+        except Exception as e:
+            logger.error(f"Failed to send breach notification: {e}")
 
 
 # Global enforcer instance

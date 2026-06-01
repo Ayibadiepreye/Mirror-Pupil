@@ -170,8 +170,8 @@ class BalanceReconciliationMonitor:
         )
         
         # Recalculate headroom
-        overall_floor = self._calculate_overall_floor(account)
-        daily_floor = self._calculate_daily_floor(account)
+        overall_floor = await self._calculate_overall_floor(account)
+        daily_floor = await self._calculate_daily_floor(account)
         
         # Get floating P&L
         floating_pnl = await self._get_floating_pnl(account)
@@ -181,7 +181,7 @@ class BalanceReconciliationMonitor:
         daily_room = current_equity - daily_floor
         
         # Calculate new withdrawable amount
-        withdrawable = self._calculate_withdrawable(account, actual_balance)
+        withdrawable = await self._calculate_withdrawable(account, actual_balance)
         
         # Send WARNING notification
         message = (
@@ -233,10 +233,10 @@ class BalanceReconciliationMonitor:
         
         await self._notify_gui(message, severity="INFO", account_key=account.account_key)
     
-    def _calculate_overall_floor(self, account: Account) -> float:
+    async def _calculate_overall_floor(self, account: Account) -> float:
         """Calculate overall floor (trails from highest_banked_balance)."""
         # Get risk profile
-        profile = self._get_risk_profile(account)
+        profile = await self._get_risk_profile(account)
         
         if account.profit_locked:
             # Profit lock active - floor locked at initial_balance
@@ -250,14 +250,14 @@ class BalanceReconciliationMonitor:
             # Static floor
             return account.initial_balance * (1 - profile.overall_loss_pct / 100)
     
-    def _calculate_daily_floor(self, account: Account) -> float:
+    async def _calculate_daily_floor(self, account: Account) -> float:
         """Calculate daily floor (static for the day)."""
-        profile = self._get_risk_profile(account)
+        profile = await self._get_risk_profile(account)
         return account.daily_start_balance - (account.initial_balance * profile.daily_loss_pct / 100)
     
-    def _calculate_withdrawable(self, account: Account, current_balance: float) -> float:
+    async def _calculate_withdrawable(self, account: Account, current_balance: float) -> float:
         """Calculate maximum safe withdrawal amount."""
-        profile = self._get_risk_profile(account)
+        profile = await self._get_risk_profile(account)
         payout_buffer = account.initial_balance * (profile.payout_buffer_pct / 100)
         
         overall_floor = self._calculate_overall_floor(account)
@@ -265,21 +265,44 @@ class BalanceReconciliationMonitor:
         
         return max(withdrawable, 0.0)
     
-    def _get_risk_profile(self, account: Account):
-        """Get account's risk profile (placeholder - implement based on your risk module)."""
-        # TODO: Import and use actual risk profile resolution
-        # For now, return a mock profile with Blue Guardian defaults
-        from dataclasses import dataclass
-        
-        @dataclass
-        class MockProfile:
-            daily_loss_pct: float = 3.0
-            overall_loss_pct: float = 6.0
-            overall_trailing: bool = True
-            profit_lock_floor_pct: float = 0.0
-            payout_buffer_pct: float = 1.0
-        
-        return MockProfile()
+    async def _get_risk_profile(self, account: Account):
+        """Get account's risk profile from database."""
+        try:
+            if account.risk_profile_id:
+                profile = await self.db.get_risk_profile(account.risk_profile_id)
+            else:
+                profile = await self.db.get_default_risk_profile()
+            
+            if not profile:
+                logger.warning(f"No risk profile found for {account.account_key}, using defaults")
+                # Fallback to Blue Guardian defaults
+                from dataclasses import dataclass
+                
+                @dataclass
+                class DefaultProfile:
+                    daily_loss_pct: float = 3.0
+                    overall_loss_pct: float = 6.0
+                    overall_trailing: bool = True
+                    profit_lock_floor_pct: float = 0.0
+                    payout_buffer_pct: float = 1.0
+                
+                return DefaultProfile()
+            
+            return profile
+        except Exception as e:
+            logger.error(f"Failed to get risk profile: {e}")
+            # Return safe defaults
+            from dataclasses import dataclass
+            
+            @dataclass
+            class DefaultProfile:
+                daily_loss_pct: float = 3.0
+                overall_loss_pct: float = 6.0
+                overall_trailing: bool = True
+                profit_lock_floor_pct: float = 0.0
+                payout_buffer_pct: float = 1.0
+            
+            return DefaultProfile()
     
     async def _get_floating_pnl(self, account: Account) -> float:
         """Get floating P&L for account."""
@@ -308,9 +331,35 @@ class BalanceReconciliationMonitor:
             return 0.0
     
     async def _notify_gui(self, message: str, severity: str, account_key: str):
-        """Send notification to GUI (placeholder)."""
-        # TODO: Implement actual GUI notification system
-        logger.log(severity, message)
+        """Send notification to GUI via WebSocket."""
+        try:
+            # Log the notification
+            logger.log(severity, message)
+            
+            # Send to GUI notification system
+            # Import WebSocket manager when available
+            try:
+                from ..api.websocket import get_websocket_manager
+                ws_manager = get_websocket_manager()
+                
+                notification_payload = {
+                    "type": "notification",
+                    "severity": severity,
+                    "message": message,
+                    "account_key": account_key,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                await ws_manager.broadcast(notification_payload)
+                logger.debug(f"[GUI NOTIFICATION] Sent: {severity} - {message}")
+                
+            except ImportError:
+                logger.debug("WebSocket manager not available, notification logged only")
+            except Exception as e:
+                logger.warning(f"Failed to send GUI notification via WebSocket: {e}")
+                
+        except Exception as e:
+            logger.error(f"Failed to send notification: {e}")
     
     async def _broadcast_balance_update(
         self,
@@ -321,19 +370,36 @@ class BalanceReconciliationMonitor:
         overall_floor: float,
         daily_floor: float
     ):
-        """Broadcast balance update via WebSocket (placeholder)."""
-        # TODO: Implement actual WebSocket broadcast
-        payload = {
-            "type": "balance_updated",
-            "account_key": account.account_key,
-            "current_balance": actual_balance,
-            "daily_pnl": account.daily_pnl,
-            "equity": actual_balance + floating_pnl,
-            "withdrawable": withdrawable,
-            "overall_floor": overall_floor,
-            "daily_floor": daily_floor,
-        }
-        logger.debug(f"[WS] Balance update: {payload}")
+        """Broadcast balance update via WebSocket."""
+        try:
+            payload = {
+                "type": "balance_updated",
+                "account_key": account.account_key,
+                "current_balance": actual_balance,
+                "daily_pnl": account.daily_pnl,
+                "equity": actual_balance + floating_pnl,
+                "withdrawable": withdrawable,
+                "overall_floor": overall_floor,
+                "daily_floor": daily_floor,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.debug(f"[WS] Balance update: {payload}")
+            
+            # Broadcast via WebSocket
+            try:
+                from ..api.websocket import get_websocket_manager
+                ws_manager = get_websocket_manager()
+                await ws_manager.broadcast(payload)
+                logger.debug(f"[WS] Broadcasted balance update for {account.account_key}")
+                
+            except ImportError:
+                logger.debug("WebSocket manager not available, balance update logged only")
+            except Exception as e:
+                logger.warning(f"Failed to broadcast balance update: {e}")
+                
+        except Exception as e:
+            logger.error(f"Failed to create balance update payload: {e}")
 
 
 # Singleton instance

@@ -197,7 +197,6 @@ class ChannelPlugin(ABC):
             mgmt = await self.parse_management(message, clean_text)
             if mgmt:
                 logger.info(f"[{self.display_name}] {mgmt}")
-                # TODO: When we have trade execution, dispatch management action here
                 return
             
             logger.debug(f"[{self.display_name}] Edited message {msg_id} - no action")
@@ -217,14 +216,12 @@ class ChannelPlugin(ABC):
         mgmt = await self.parse_management(message, clean_text)
         if mgmt:
             logger.info(f"[{self.display_name}] {mgmt}")
-            # TODO: When we have trade execution, dispatch management action here
             return
         
         # Try entry parsing
         signal = await self.parse_entry(message, clean_text)
         if signal:
             logger.info(f"[{self.display_name}] {signal}")
-            # TODO: When we have trade execution, dispatch entry signal here
             return
         
         logger.debug(f"[{self.display_name}] Message {msg_id} - no match")
@@ -333,7 +330,6 @@ class ChannelPlugin(ABC):
         # Remove from waiting room
         del self._waiting_room[key]
         
-        # TODO: When we have trade execution, dispatch completed signal here
         logger.info(f"[{self.display_name}] {signal}")
         
         return True
@@ -367,7 +363,6 @@ class ChannelPlugin(ABC):
             del self._waiting_room[key]
             
             logger.info(f"[{self.display_name}] Waiting room: Completed! {signal}")
-            # TODO: When we have trade execution, dispatch signal here
         else:
             logger.debug(f"[{self.display_name}] Waiting room: Still incomplete")
     

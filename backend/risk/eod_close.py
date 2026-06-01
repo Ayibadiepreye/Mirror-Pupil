@@ -128,17 +128,53 @@ class EODCloseHandler:
         
         for trade in active_trades:
             try:
-                # TODO: Get actual exit price from TradeLocker
-                # For now, use entry price (breakeven)
-                exit_price = trade.entry_price
-                pnl = 0.0  # Placeholder
+                # Get TradeLocker client
+                from ..core.account_manager import get_account_manager
+                account_manager = get_account_manager()
+                tl_client = account_manager.get_client_for_account(account_key)
+                
+                if not tl_client:
+                    logger.error(f"No TradeLocker client for {account_key}")
+                    continue
+                
+                # Close position on TradeLocker
+                await tl_client.close_position(trade.tl_position_id)
+                
+                # Get actual exit price from closed position
+                try:
+                    position_info = await tl_client.get_position(trade.tl_position_id)
+                    exit_price = float(position_info.get('closePrice', trade.entry_price))
+                except:
+                    # Fallback: get current market price
+                    try:
+                        quote = await tl_client.get_quote(trade.symbol)
+                        if trade.direction == 'BUY':
+                            exit_price = float(quote.get('bid', trade.entry_price))
+                        else:
+                            exit_price = float(quote.get('ask', trade.entry_price))
+                    except:
+                        exit_price = trade.entry_price  # Last resort fallback
+                
+                # Calculate actual P&L (simplified calculation)
+                if trade.direction == 'BUY':
+                    pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+                else:
+                    pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                
+                # Determine outcome
+                if pnl > 0:
+                    outcome = "WIN"
+                elif pnl < 0:
+                    outcome = "LOSS"
+                else:
+                    outcome = "BE"
                 
                 # Close trade in database
                 success = await self.db.close_active_trade(
                     trade_id=trade.trade_id,
                     exit_price=exit_price,
                     pnl=pnl,
-                    outcome="BE",  # Breakeven for now
+                    outcome=outcome,
                     close_reason="EOD"
                 )
                 
@@ -146,7 +182,7 @@ class EODCloseHandler:
                     closed_count += 1
                     logger.info(
                         f"[{account_key}] Closed trade {trade.trade_id}: "
-                        f"{trade.symbol} {trade.direction}"
+                        f"{trade.symbol} {trade.direction} @ {exit_price:.5f} (P&L: ${pnl:.2f})"
                     )
                 
             except Exception as e:

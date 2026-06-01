@@ -328,6 +328,20 @@ class DatabaseManager:
             logger.error(f"Failed to update account: {e}")
             return False
     
+    async def update_account_profit_locked(self, account_key: str, locked: bool) -> bool:
+        """Update account profit_locked status."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE accounts SET profit_locked = $1 WHERE account_key = $2",
+                    locked, account_key
+                )
+                logger.info(f"✓ Account {account_key} profit_locked={locked}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update account profit_locked: {e}")
+            return False
+    
     # ==================== CHANNEL SUBSCRIPTION QUERIES ====================
     
     async def get_channel_subscriptions(self, account_key: str) -> List[ChannelSubscription]:

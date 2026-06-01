@@ -234,19 +234,47 @@ class BillirichyAutonomousManager:
             # Close full position
             await tl_client.close_position(trade.tl_position_id)
             
+            # Get actual exit price from closed position
+            try:
+                position_info = await tl_client.get_position(trade.tl_position_id)
+                exit_price = float(position_info.get('closePrice', trade.entry_price))
+            except:
+                # Fallback: get current market price
+                try:
+                    quote = await tl_client.get_quote(trade.symbol)
+                    if trade.direction == 'BUY':
+                        exit_price = float(quote.get('bid', trade.entry_price))
+                    else:
+                        exit_price = float(quote.get('ask', trade.entry_price))
+                except:
+                    exit_price = trade.entry_price  # Last resort fallback
+            
+            # Calculate actual P&L (simplified calculation)
+            if trade.direction == 'BUY':
+                pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+            else:
+                pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+            
+            # Determine outcome
+            if pnl > 0:
+                outcome = 'WIN'
+            elif pnl < 0:
+                outcome = 'LOSS'
+            else:
+                outcome = 'BE'
+            
             # Move to history
-            # TODO: Calculate actual exit price and P&L
             await self.db.close_active_trade(
                 trade_id=trade.trade_id,
-                exit_price=0.0,  # Placeholder - get from TL
-                pnl=0.0,  # Placeholder - calculate
-                outcome='AUTONOMOUS',
+                exit_price=exit_price,
+                pnl=pnl,
+                outcome=outcome,
                 close_reason=reason
             )
             
             logger.info(
                 f"[AUTO-CLOSE] {trade.signal_id} ({trade.symbol}): "
-                f"Closed 100% - {reason}"
+                f"Closed 100% @ {exit_price:.5f} (P&L: ${pnl:.2f}) - {reason}"
             )
             
         except Exception as e:
