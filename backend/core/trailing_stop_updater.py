@@ -193,10 +193,7 @@ class TrailingStopUpdater:
             )
             
             # Update database
-            await self.db.update_trade(
-                trade.trade_id,
-                sl=new_sl
-            )
+            await self.db.update_trade_sl(trade.trade_id, new_sl)
             
             logger.info(
                 f"[TRAIL] {trade.signal_id} ({trade.symbol} {trade.direction}): "

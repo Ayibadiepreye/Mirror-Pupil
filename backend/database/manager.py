@@ -342,6 +342,50 @@ class DatabaseManager:
             logger.error(f"Failed to update account profit_locked: {e}")
             return False
     
+    async def update_account(self, account_key: str, **kwargs) -> bool:
+        """
+        Update account with flexible field updates.
+        
+        Args:
+            account_key: Account identifier
+            **kwargs: Fields to update (e.g., current_balance=100.0, last_synced_balance=100.0)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not kwargs:
+            logger.warning("update_account called with no fields to update")
+            return False
+        
+        try:
+            # Build dynamic UPDATE query
+            set_clauses = []
+            values = []
+            param_num = 1
+            
+            for field, value in kwargs.items():
+                set_clauses.append(f"{field} = ${param_num}")
+                values.append(value)
+                param_num += 1
+            
+            # Add account_key as final parameter
+            values.append(account_key)
+            
+            query = f"""
+                UPDATE accounts
+                SET {', '.join(set_clauses)}
+                WHERE account_key = ${param_num}
+            """
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *values)
+                logger.debug(f"✓ Updated account {account_key}: {', '.join(kwargs.keys())}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update account {account_key}: {e}")
+            return False
+    
     # ==================== CHANNEL SUBSCRIPTION QUERIES ====================
     
     async def get_channel_subscriptions(self, account_key: str) -> List[ChannelSubscription]:

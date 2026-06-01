@@ -476,6 +476,39 @@ class TradeLockerClient:
         logger.info(f"[{self.credential_key}] ✓ Order cancelled")
         return result
     
+    async def get_order_status(self, order_id: int) -> Optional[Dict]:
+        """
+        Get status of a pending order.
+        
+        Args:
+            order_id: TradeLocker order ID
+        
+        Returns:
+            Dict with order details including status, filledQuantity, fillPrice, etc.
+            None if order not found
+        """
+        try:
+            logger.debug(f"[{self.credential_key}] Fetching order status for {order_id}")
+            
+            # Get all orders
+            orders_df = await self._call_api("get_all_orders")
+            
+            if isinstance(orders_df, pd.DataFrame) and not orders_df.empty:
+                # Find the specific order
+                order_row = orders_df[orders_df['id'] == order_id]
+                
+                if not order_row.empty:
+                    order_dict = order_row.iloc[0].to_dict()
+                    logger.debug(f"[{self.credential_key}] Order {order_id} status: {order_dict.get('status')}")
+                    return order_dict
+            
+            logger.warning(f"[{self.credential_key}] Order {order_id} not found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"[{self.credential_key}] Failed to get order status for {order_id}: {e}")
+            return None
+    
     async def get_all_positions(self) -> List[Dict]:
         """
         Get all open positions.

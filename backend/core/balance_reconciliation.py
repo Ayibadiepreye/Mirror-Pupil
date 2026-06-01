@@ -109,7 +109,7 @@ class BalanceReconciliationMonitor:
         
         try:
             # Poll actual balance
-            account_info = await tl_client.get_account(account.tl_account_id)
+            account_info = await tl_client.get_account_state()
             actual_balance = float(account_info.get('balance', 0))
             
         except Exception as e:
@@ -134,7 +134,7 @@ class BalanceReconciliationMonitor:
         # Meaningful change detected
         if delta > WITHDRAWAL_THRESHOLD:
             # Balance dropped - withdrawal detected
-            await self._handle_withdrawal(account, actual_balance, delta)
+            await self._handle_withdrawal(account, actual_balance, delta, expected_balance)
         
         elif actual_balance > account.current_balance + WITHDRAWAL_THRESHOLD:
             # Balance increased - deposit or correction
@@ -144,7 +144,8 @@ class BalanceReconciliationMonitor:
         self,
         account: Account,
         actual_balance: float,
-        withdrawn: float
+        withdrawn: float,
+        expected_balance: float
     ):
         """
         Handle detected withdrawal.
