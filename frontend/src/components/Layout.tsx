@@ -1,8 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Home, Users, TrendingUp, History, Settings } from 'lucide-react'
+import { Home, Users, TrendingUp, Settings, Power, Bell } from 'lucide-react'
 
 export default function Layout() {
   const location = useLocation()
+  
+  // Fetch notification count (mock for now)
+  const notificationCount = 0
   
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/')
@@ -12,7 +15,7 @@ export default function Layout() {
     { path: '/', icon: Home, label: 'Dashboard' },
     { path: '/accounts', icon: Users, label: 'Accounts' },
     { path: '/trades', icon: TrendingUp, label: 'Trades' },
-    { path: '/history', icon: History, label: 'History' },
+    { path: '/bot-control', icon: Power, label: 'Bot' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ]
   
@@ -22,7 +25,15 @@ export default function Layout() {
       <header className="bg-kob-crimson border-b border-kob-border px-4 py-3 sticky top-0 z-50">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-white">Mirror Pupil v5.1</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <Link to="/notifications" className="relative">
+              <Bell size={20} className="text-white" />
+              {notificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                  {notificationCount}
+                </span>
+              )}
+            </Link>
             <span className="text-xs text-white/80">Knights of the Blood Oath</span>
           </div>
         </div>

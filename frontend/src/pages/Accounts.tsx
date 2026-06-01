@@ -65,8 +65,11 @@ export default function Accounts() {
               <AccountCard account={account} />
               <button
                 type="button"
-                onClick={() => handleDeleteAccount(account.account_key, account.display_name)}
-                className="absolute top-4 right-4 p-2 bg-kob-base/90 text-kob-text-dim hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-all"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleDeleteAccount(account.account_key, account.display_name)
+                }}
+                className="absolute top-4 right-4 p-2 bg-kob-base/90 text-kob-text-dim hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-all z-10"
                 title="Delete account"
               >
                 <Trash2 size={16} />

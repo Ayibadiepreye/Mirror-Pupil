@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Account } from '../types'
 
 interface AccountCardProps {
@@ -6,11 +7,21 @@ interface AccountCardProps {
 }
 
 export default function AccountCard({ account }: AccountCardProps) {
+  const navigate = useNavigate()
   const pnlPositive = account.daily_pnl >= 0
   const pnlPercentage = ((account.daily_pnl / account.initial_balance) * 100).toFixed(2)
   
+  const handleClick = () => {
+    // URL encode the account key for safe routing
+    const encodedKey = encodeURIComponent(account.account_key)
+    navigate(`/accounts/${encodedKey}`)
+  }
+  
   return (
-    <div className="card hover:border-kob-crimson transition-colors cursor-pointer">
+    <div 
+      onClick={handleClick}
+      className="card hover:border-kob-crimson transition-colors cursor-pointer"
+    >
       <div className="flex items-start justify-between mb-3">
         <div>
           <h4 className="font-semibold text-kob-text">

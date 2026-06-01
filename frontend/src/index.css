@@ -82,4 +82,14 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-kob-red;
   }
+  
+  /* Hide scrollbar but keep functionality */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
