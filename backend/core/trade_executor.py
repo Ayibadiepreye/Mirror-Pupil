@@ -213,17 +213,54 @@ class TradeExecutor:
                 account = self.account_manager.get_account(account_key)
                 if account:
                     try:
-                        await account['client'].close_position(
+                        tl_client = account['client']
+                        
+                        # Close position
+                        await tl_client.close_position(
                             position_id=lowest_priority_trade.tl_position_id
                         )
+                        
+                        # Get exit price
+                        try:
+                            market_price = await tl_client.get_market_price(lowest_priority_trade.symbol)
+                            exit_price = market_price if market_price else lowest_priority_trade.entry_price
+                        except Exception:
+                            exit_price = lowest_priority_trade.entry_price
+                        
+                        # Calculate P&L in USD
+                        try:
+                            instruments = await tl_client.get_all_instruments()
+                            instrument = next(
+                                (i for i in instruments if lowest_priority_trade.symbol in i.get('name', '')),
+                                None
+                            )
+                            
+                            from ..risk.calculator import calculate_usd_pnl
+                            pnl = await calculate_usd_pnl(
+                                symbol=lowest_priority_trade.symbol,
+                                entry_price=lowest_priority_trade.entry_price,
+                                exit_price=exit_price,
+                                lot_size=lowest_priority_trade.lot_size,
+                                direction=lowest_priority_trade.direction,
+                                client=tl_client,
+                                instrument=instrument
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
+                            # Fallback
+                            if lowest_priority_trade.direction == 'BUY':
+                                pnl = (exit_price - lowest_priority_trade.entry_price) * lowest_priority_trade.lot_size * 100000
+                            else:
+                                pnl = (lowest_priority_trade.entry_price - exit_price) * lowest_priority_trade.lot_size * 100000
+                        
                         await self.db.move_trade_to_history(
                             lowest_priority_trade.trade_id,
-                            exit_price=0.0,  # Will be updated by polling
-                            pnl=0.0,
+                            exit_price=exit_price,
+                            pnl=pnl,
                             close_reason='PRIORITY_CLOSE'
                         )
                         logger.info(
-                            f"[{account_key}] ✓ Closed lower priority trade"
+                            f"[{account_key}] ✓ Closed lower priority trade: P&L ${pnl:.2f}"
                         )
                     except Exception as e:
                         logger.error(
@@ -762,14 +799,48 @@ class TradeExecutor:
             # CLOSE_ALL or IMPLIED_CLOSE
             elif action in ['CLOSE_ALL', 'IMPLIED_CLOSE']:
                 await client.close_position(position_id=trade.tl_position_id)
+                
+                # Get exit price
+                try:
+                    market_price = await client.get_market_price(trade.symbol)
+                    exit_price = market_price if market_price else trade.entry_price
+                except Exception:
+                    exit_price = trade.entry_price
+                
+                # Calculate P&L in USD
+                try:
+                    instruments = await client.get_all_instruments()
+                    instrument = next(
+                        (i for i in instruments if trade.symbol in i.get('name', '')),
+                        None
+                    )
+                    
+                    from ..risk.calculator import calculate_usd_pnl
+                    pnl = await calculate_usd_pnl(
+                        symbol=trade.symbol,
+                        entry_price=trade.entry_price,
+                        exit_price=exit_price,
+                        lot_size=trade.lot_size,
+                        direction=trade.direction,
+                        client=client,
+                        instrument=instrument
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
+                    # Fallback
+                    if trade.direction == 'BUY':
+                        pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+                    else:
+                        pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                
                 await self.db.move_trade_to_history(
                     trade.trade_id,
-                    exit_price=0.0,  # Will be updated by polling
-                    pnl=0.0,
+                    exit_price=exit_price,
+                    pnl=pnl,
                     close_reason='MANUAL'
                 )
                 logger.info(
-                    f"[{account_key}] ✓ CLOSE_ALL: {trade.symbol} position closed"
+                    f"[{account_key}] ✓ CLOSE_ALL: {trade.symbol} position closed (P&L: ${pnl:.2f})"
                 )
                 return {"trade_id": trade.trade_id, "status": "success", "action": "close_all"}
             
