@@ -53,8 +53,24 @@ export default function BotControl() {
     mutationFn: (channelId: number) => api.skipNextSignal(channelId),
   })
   
+  const toggleWeekendMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.toggleWeekendTrading(enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bot-status'] })
+    },
+  })
+  
+  const toggleEODMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.toggleEODTrading(enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bot-status'] })
+    },
+  })
+  
   const isRunning = botStatus?.status === 'running'
   const isDryRun = botStatus?.dry_run || false
+  const weekendTradingEnabled = botStatus?.allow_weekend_trading || false
+  const eodTradingEnabled = botStatus?.allow_eod_trading || false
   
   const handleBotControl = () => {
     controlBotMutation.mutate(isRunning ? 'stop' : 'start')
@@ -158,19 +174,28 @@ export default function BotControl() {
           <div>
             <h3 className="text-lg font-semibold text-kob-text">Weekend Trading</h3>
             <p className="text-xs text-kob-text-dim mt-1">
-              Allow trading on weekends
+              Allow trading on weekends (bypasses Saturday/Sunday blocks)
             </p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
-              checked={false}
+              checked={weekendTradingEnabled}
+              onChange={(e) => toggleWeekendMutation.mutate(e.target.checked)}
+              disabled={toggleWeekendMutation.isPending}
               className="sr-only peer"
-              readOnly
             />
-            <div className="w-14 h-7 bg-kob-app peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-kob-red rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500"></div>
+            <div className="w-14 h-7 bg-kob-app peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-kob-red rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500 peer-disabled:opacity-50"></div>
           </label>
         </div>
+        {weekendTradingEnabled && (
+          <div className="bg-amber-900/20 border border-amber-400/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-amber-400 text-sm">
+              <AlertTriangle size={16} />
+              <span className="font-medium">Weekend trading active - signals accepted Saturday/Sunday</span>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* EOD Trading Card */}
@@ -179,19 +204,28 @@ export default function BotControl() {
           <div>
             <h3 className="text-lg font-semibold text-kob-text">EOD Trading</h3>
             <p className="text-xs text-kob-text-dim mt-1">
-              Close all positions at end of day
+              Skip 4:45 PM force close & allow after-hours trading
             </p>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
-              checked={false}
+              checked={eodTradingEnabled}
+              onChange={(e) => toggleEODMutation.mutate(e.target.checked)}
+              disabled={toggleEODMutation.isPending}
               className="sr-only peer"
-              readOnly
             />
-            <div className="w-14 h-7 bg-kob-app peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-kob-red rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500"></div>
+            <div className="w-14 h-7 bg-kob-app peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-kob-red rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-amber-500 peer-disabled:opacity-50"></div>
           </label>
         </div>
+        {eodTradingEnabled && (
+          <div className="bg-amber-900/20 border border-amber-400/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-amber-400 text-sm">
+              <AlertTriangle size={16} />
+              <span className="font-medium">EOD restrictions disabled - positions kept overnight</span>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Emergency Actions Card */}

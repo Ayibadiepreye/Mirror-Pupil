@@ -69,8 +69,8 @@ class TradeExecutor:
             Dict mapping account_key → execution result
         """
         # CRITICAL: Check trading hours FIRST (before any execution)
-        trading_hours = get_trading_hours_validator()
-        allowed, reason = trading_hours.is_trading_allowed()
+        trading_hours = get_trading_hours_validator(db=self.db)
+        allowed, reason = await trading_hours.is_trading_allowed()
         
         if not allowed:
             next_window = trading_hours.get_next_trading_window()

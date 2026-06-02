@@ -90,7 +90,14 @@ class EODCloseHandler:
         Force close all open trades across all accounts.
         
         Called at exactly 4:45 PM EST (15 minutes before daily reset).
+        Can be bypassed if 'allow_eod_trading' setting is enabled.
         """
+        # Check if EOD trading is allowed (bypasses close)
+        eod_allowed = await self.db.get_bot_setting('allow_eod_trading')
+        if eod_allowed == 'true':
+            logger.info("EOD close skipped - EOD trading is enabled")
+            return
+        
         logger.info("="*60)
         logger.info("EOD FORCE CLOSE - 4:45 PM EST")
         logger.info("="*60)

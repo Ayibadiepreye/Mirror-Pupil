@@ -23,6 +23,8 @@ class BotStatusResponse(BaseModel):
     paused_accounts: int
     breached_accounts: int
     total_active_trades: int
+    allow_weekend_trading: bool = False
+    allow_eod_trading: bool = False
 
 
 class BotControlRequest(BaseModel):
@@ -63,13 +65,20 @@ async def get_bot_status(db: DatabaseManager = Depends(get_db)):
             trades = await db.get_active_trades(account.account_key)
             total_trades += len(trades)
         
+        # Get bot settings
+        settings = await db.get_all_bot_settings()
+        weekend_trading = settings.get('allow_weekend_trading', 'false') == 'true'
+        eod_trading = settings.get('allow_eod_trading', 'false') == 'true'
+        
         return BotStatusResponse(
             status="running",
             dry_run=False,  # TODO: Get from config
             active_accounts=active_accounts,
             paused_accounts=paused_accounts,
             breached_accounts=breached_accounts,
-            total_active_trades=total_trades
+            total_active_trades=total_trades,
+            allow_weekend_trading=weekend_trading,
+            allow_eod_trading=eod_trading
         )
     except Exception as e:
         logger.error(f"Failed to get bot status: {e}")
@@ -263,4 +272,94 @@ async def skip_next_signal(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to skip next signal: {str(e)}"
+        )
+
+
+
+@router.post("/settings/weekend-trading")
+async def toggle_weekend_trading(
+    request: ToggleRequest,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Toggle weekend trading setting.
+    
+    When enabled:
+    - Allows new signals on Saturday/Sunday
+    - Bypasses weekend blocking in TradeExecutor
+    
+    Args:
+        request: Toggle request with enabled boolean
+    
+    Returns:
+        Success message with new setting value
+    """
+    try:
+        value = 'true' if request.enabled else 'false'
+        success = await db.set_bot_setting('allow_weekend_trading', value)
+        
+        if success:
+            logger.warning(f"Weekend trading {'ENABLED' if request.enabled else 'DISABLED'}")
+            return {
+                "status": "success",
+                "message": f"Weekend trading {'enabled' if request.enabled else 'disabled'}",
+                "allow_weekend_trading": request.enabled
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update setting"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle weekend trading: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle weekend trading: {str(e)}"
+        )
+
+
+@router.post("/settings/eod-trading")
+async def toggle_eod_trading(
+    request: ToggleRequest,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Toggle EOD trading setting.
+    
+    When enabled:
+    - Skips 4:45 PM EST force close
+    - Allows new signals after 4:45 PM EST
+    - Allows trading before 6:00 AM EST
+    
+    Args:
+        request: Toggle request with enabled boolean
+    
+    Returns:
+        Success message with new setting value
+    """
+    try:
+        value = 'true' if request.enabled else 'false'
+        success = await db.set_bot_setting('allow_eod_trading', value)
+        
+        if success:
+            logger.warning(f"EOD trading {'ENABLED' if request.enabled else 'DISABLED'}")
+            return {
+                "status": "success",
+                "message": f"EOD trading {'enabled' if request.enabled else 'disabled'}",
+                "allow_eod_trading": request.enabled
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update setting"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle EOD trading: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle EOD trading: {str(e)}"
         )

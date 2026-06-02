@@ -1058,3 +1058,69 @@ async def get_db() -> DatabaseManager:
         _db_manager = DatabaseManager()
         await _db_manager.connect()
     return _db_manager
+
+    # ==================== BOT SETTINGS METHODS ====================
+    
+    async def get_bot_setting(self, setting_key: str) -> Optional[str]:
+        """
+        Get a bot setting value.
+        
+        Args:
+            setting_key: Setting key (e.g., 'allow_weekend_trading')
+        
+        Returns:
+            Setting value as string, or None if not found
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                value = await conn.fetchval(
+                    "SELECT setting_value FROM bot_settings WHERE setting_key = $1",
+                    setting_key
+                )
+                return value
+        except Exception as e:
+            logger.error(f"Failed to get bot setting {setting_key}: {e}")
+            return None
+    
+    async def set_bot_setting(self, setting_key: str, setting_value: str) -> bool:
+        """
+        Set a bot setting value.
+        
+        Args:
+            setting_key: Setting key
+            setting_value: Setting value as string
+        
+        Returns:
+            True if successful
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO bot_settings (setting_key, setting_value)
+                    VALUES ($1, $2)
+                    ON CONFLICT (setting_key)
+                    DO UPDATE SET setting_value = $2, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    setting_key, setting_value
+                )
+                logger.info(f"✓ Set bot setting: {setting_key} = {setting_value}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set bot setting {setting_key}: {e}")
+            return False
+    
+    async def get_all_bot_settings(self) -> Dict[str, str]:
+        """
+        Get all bot settings.
+        
+        Returns:
+            Dictionary of setting_key → setting_value
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch("SELECT setting_key, setting_value FROM bot_settings")
+                return {row['setting_key']: row['setting_value'] for row in rows}
+        except Exception as e:
+            logger.error(f"Failed to get bot settings: {e}")
+            return {}

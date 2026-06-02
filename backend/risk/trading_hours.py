@@ -18,10 +18,15 @@ class TradingHoursValidator:
     - Market closes: Friday 4:45 PM EST (our buffer before 5pm close)
     - Daily EOD close: 4:45 PM EST (no new trades until 6:00 AM next day)
     - Weekend: No trading Saturday through Sunday 6:00 PM EST
+    
+    Can be overridden by database settings:
+    - allow_weekend_trading: If true, bypass weekend checks
+    - allow_eod_trading: If true, bypass EOD checks
     """
     
-    def __init__(self):
+    def __init__(self, db=None):
         self.timezone = pytz.timezone("America/New_York")  # EST/EDT
+        self.db = db  # Optional: for checking settings
         
         # Trading hours
         self.daily_close_time = time(16, 45)  # 4:45 PM EST
@@ -30,42 +35,70 @@ class TradingHoursValidator:
         
         logger.info("Initialized TradingHoursValidator")
     
-    def is_trading_allowed(self) -> tuple[bool, str]:
+    async def is_trading_allowed(self) -> tuple[bool, str]:
         """
         Check if new trades are allowed right now.
         
         Returns:
             (allowed: bool, reason: str)
         """
+        # Check if settings override rules
+        weekend_allowed = await self._is_weekend_trading_allowed()
+        eod_allowed = await self._is_eod_trading_allowed()
+        
         now = datetime.now(self.timezone)
         current_time = now.time()
         weekday = now.weekday()  # 0=Monday, 6=Sunday
         
-        # RULE 1: Weekend check (Saturday or Sunday before 6pm)
-        if weekday == 5:  # Saturday
-            return False, "WEEKEND_SATURDAY - Market closed on Saturday"
+        # RULE 1: Weekend check (can be bypassed)
+        if not weekend_allowed:
+            if weekday == 5:  # Saturday
+                return False, "WEEKEND_SATURDAY - Market closed on Saturday"
+            
+            if weekday == 6:  # Sunday
+                if current_time < self.weekend_open_time:
+                    return False, f"WEEKEND_SUNDAY - Market opens at 6:00 PM EST (currently {current_time.strftime('%I:%M %p')})"
+                else:
+                    # Sunday after 6pm - market is open
+                    return True, "OK"
+            
+            # RULE 2: Friday after 4:45pm (weekend close - can be bypassed)
+            if weekday == 4:  # Friday
+                if current_time >= self.daily_close_time:
+                    return False, f"WEEKEND_CLOSE - No new trades after 4:45 PM EST on Friday (currently {current_time.strftime('%I:%M %p')})"
         
-        if weekday == 6:  # Sunday
-            if current_time < self.weekend_open_time:
-                return False, f"WEEKEND_SUNDAY - Market opens at 6:00 PM EST (currently {current_time.strftime('%I:%M %p')})"
-            else:
-                # Sunday after 6pm - market is open
-                return True, "OK"
-        
-        # RULE 2: Friday after 4:45pm (weekend close)
-        if weekday == 4:  # Friday
+        # RULE 3: Daily EOD window (can be bypassed)
+        if not eod_allowed:
             if current_time >= self.daily_close_time:
-                return False, f"WEEKEND_CLOSE - No new trades after 4:45 PM EST on Friday (currently {current_time.strftime('%I:%M %p')})"
-        
-        # RULE 3: Daily EOD window (4:45pm - 6:00am next day)
-        if current_time >= self.daily_close_time:
-            return False, f"EOD_CLOSE - No new trades after 4:45 PM EST (currently {current_time.strftime('%I:%M %p')}). Market reopens at 6:00 AM EST."
-        
-        if current_time < self.daily_open_time:
-            return False, f"PRE_MARKET - No new trades before 6:00 AM EST (currently {current_time.strftime('%I:%M %p')})"
+                return False, f"EOD_CLOSE - No new trades after 4:45 PM EST (currently {current_time.strftime('%I:%M %p')}). Market reopens at 6:00 AM EST."
+            
+            if current_time < self.daily_open_time:
+                return False, f"PRE_MARKET - No new trades before 6:00 AM EST (currently {current_time.strftime('%I:%M %p')})"
         
         # All checks passed - trading allowed
         return True, "OK"
+    
+    async def _is_weekend_trading_allowed(self) -> bool:
+        """Check if weekend trading is enabled in settings."""
+        if not self.db:
+            return False
+        
+        try:
+            setting = await self.db.get_bot_setting('allow_weekend_trading')
+            return setting == 'true' if setting else False
+        except:
+            return False
+    
+    async def _is_eod_trading_allowed(self) -> bool:
+        """Check if EOD trading is enabled in settings."""
+        if not self.db:
+            return False
+        
+        try:
+            setting = await self.db.get_bot_setting('allow_eod_trading')
+            return setting == 'true' if setting else False
+        except:
+            return False
     
     def get_next_trading_window(self) -> str:
         """
@@ -98,6 +131,7 @@ class TradingHoursValidator:
     def should_close_all_trades(self) -> tuple[bool, str]:
         """
         Check if all trades should be force-closed right now.
+        SYNCHRONOUS - checked during EOD close handler execution.
         
         Returns:
             (should_close: bool, reason: str)
@@ -121,9 +155,12 @@ class TradingHoursValidator:
 _validator = None
 
 
-def get_trading_hours_validator() -> TradingHoursValidator:
+def get_trading_hours_validator(db=None) -> TradingHoursValidator:
     """Get the global trading hours validator instance."""
     global _validator
     if _validator is None:
-        _validator = TradingHoursValidator()
+        _validator = TradingHoursValidator(db=db)
+    elif db and not _validator.db:
+        # Update db reference if provided later
+        _validator.db = db
     return _validator

@@ -77,4 +77,6 @@ export interface BotStatus {
   paused_accounts: number
   breached_accounts: number
   total_active_trades: number
+  allow_weekend_trading: boolean
+  allow_eod_trading: boolean
 }

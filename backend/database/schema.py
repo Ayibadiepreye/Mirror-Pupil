@@ -153,6 +153,13 @@ CREATE TABLE IF NOT EXISTS message_cache (
     PRIMARY KEY (msg_id, channel_id)
 );
 
+-- Bot Settings: Global bot configuration
+CREATE TABLE IF NOT EXISTS bot_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_active_trades_account ON active_trades(account_key);
 CREATE INDEX IF NOT EXISTS idx_active_trades_signal ON active_trades(signal_id);
@@ -195,6 +202,12 @@ INSERT INTO risk_profiles (
     'Default profile matching Blue Guardian Instant Standard drawdown rules. Daily 3% static floor, overall 6% trailing from closed balance, profit lock at +6%.'
 )
 ON CONFLICT (profile_name) DO NOTHING;
+
+-- Default bot settings
+INSERT INTO bot_settings (setting_key, setting_value) VALUES
+    ('allow_weekend_trading', 'false'),
+    ('allow_eod_trading', 'false')
+ON CONFLICT (setting_key) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;
 """
 
 # Cleanup queries
