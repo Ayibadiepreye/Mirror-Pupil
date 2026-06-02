@@ -313,38 +313,12 @@ class TradeExecutor:
                         f"proceeding as standalone trade"
                     )
         
-        # Step 4: Validate trade (risk enforcer)
-        if self.risk_enforcer and signal.sl:
-            validation = await self.risk_enforcer.validate_trade(
-                account=account_db,
-                profile=profile,
-                entry_price=signal.entry_price or 0.0,  # Will be filled at market
-                sl_price=signal.sl,
-                lot_size=self.default_lot_size,
-                symbol=signal.symbol,
-                client=client,  # Pass TradeLocker client for live price fetching
-                instrument=instrument if 'instrument' in locals() else None
-            )
-            
-            if not validation['allowed']:
-                logger.warning(
-                    f"[{account_key}] Trade rejected by risk enforcer: {validation['reason']}"
-                )
-                return {
-                    "status": "rejected",
-                    "reason": validation['reason']
-                }
-            
-            trade_risk = validation.get('trade_risk', 0.0)
-        else:
-            trade_risk = 0.0  # No SL = no risk calculation
-        
         # Dry-run mode
         if self.dry_run:
-            return await self._dry_run_execute(signal, channel_id, account_key, trade_risk)
+            return await self._dry_run_execute(signal, channel_id, account_key, 0.0)
         
         try:
-            # Step 4: Place order on TradeLocker
+            # Step 4: Resolve instrument and prepare order
             # 4a. Resolve symbol to instrument ID
             instrument_id = await client.get_instrument_id_from_symbol_name(signal.symbol)
             if not instrument_id:
@@ -365,12 +339,38 @@ class TradeExecutor:
             if not instrument:
                 raise Exception(f"Instrument details not found for {signal.symbol}")
             
+            # Step 5: Validate trade with risk enforcer (now that we have instrument)
+            if self.risk_enforcer and signal.sl:
+                validation = await self.risk_enforcer.validate_trade(
+                    account=account_db,
+                    profile=profile,
+                    entry_price=signal.entry_price or 0.0,  # Will be filled at market
+                    sl_price=signal.sl,
+                    lot_size=self.default_lot_size,
+                    symbol=signal.symbol,
+                    client=client,  # Pass TradeLocker client for live price fetching
+                    instrument=instrument
+                )
+                
+                if not validation['allowed']:
+                    logger.warning(
+                        f"[{account_key}] Trade rejected by risk enforcer: {validation['reason']}"
+                    )
+                    return {
+                        "status": "rejected",
+                        "reason": validation['reason']
+                    }
+                
+                trade_risk = validation.get('trade_risk', 0.0)
+            else:
+                trade_risk = 0.0  # No SL = no risk calculation
+            
             lot_step = instrument.get('lotStep', 0.01)
             
-            # 4d. Round lot size
+            # Step 6: Round lot size
             lot_size = client.round_lot_size(self.default_lot_size, lot_step)
             
-            # 4e. Prepare order parameters
+            # Step 7: Prepare order parameters
             side = signal.direction.lower()  # "buy" or "sell"
             type_ = signal.order_type.lower()  # "market", "limit", "stop"
             
@@ -381,7 +381,7 @@ class TradeExecutor:
             take_profit = signal.tp[0] if signal.tp and len(signal.tp) > 0 else None
             stop_loss = signal.sl
             
-            # 4f. Create order
+            # Step 8: Create order
             logger.info(
                 f"[{account_key}] Placing {type_.upper()} order: "
                 f"{side.upper()} {lot_size} lots of {signal.symbol}"
@@ -399,7 +399,7 @@ class TradeExecutor:
                 validity="GTC"
             )
             
-            # 4g. Extract order details
+            # Step 9: Extract order details
             order_id = order.get('orderId') or order.get('id')
             position_id = order.get('positionId')
             fill_price = order.get('fillPrice') or order.get('price')
@@ -432,7 +432,7 @@ class TradeExecutor:
                 f"Position={position_id}, Status={status}, Price={fill_price}"
             )
             
-            # Step 5: ✅ RECORD IN DATABASE (active_trades table)
+            # Step 10: ✅ RECORD IN DATABASE (active_trades table)
             # This is the CRITICAL step that was missing!
             signal_id = f"{signal.channel_id}_{signal.msg_id}"  # Format: channel_id_msg_id
             
@@ -474,7 +474,7 @@ class TradeExecutor:
                     f"[{account_key}] ❌ Failed to record trade in database!"
                 )
             
-            # Step 6: Return result
+            # Step 11: Return result
             return {
                 "status": status,
                 "order_id": order_id,
