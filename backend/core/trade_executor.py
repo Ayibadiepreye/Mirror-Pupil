@@ -184,107 +184,16 @@ class TradeExecutor:
         # Check if limit reached
         if current_count >= max_concurrent:
             logger.warning(
-                f"[{account_key}] Concurrent limit reached: {current_count}/{max_concurrent}"
+                f"[{account_key}] Concurrent limit reached: {current_count}/{max_concurrent}. "
+                f"Signal rejected. Wait for existing trades to close naturally."
             )
             
-            # Get channel priorities for all active trades
-            trade_priorities = []
-            for trade in active_trades:
-                if trade.status != 'filled':
-                    continue
-                channel_info = await self.db.get_channel(trade.channel_id)
-                trade_priority = channel_info.priority if channel_info else 999
-                trade_priorities.append((trade, trade_priority))
-            
-            # Sort by priority (higher number = lower priority)
-            trade_priorities.sort(key=lambda x: x[1], reverse=True)
-            
-            # Check if incoming signal has higher priority than lowest priority trade
-            if trade_priorities and channel_priority < trade_priorities[0][1]:
-                # Close the lowest priority trade
-                lowest_priority_trade = trade_priorities[0][0]
-                logger.info(
-                    f"[{account_key}] Closing lower priority trade to make room: "
-                    f"{lowest_priority_trade.symbol} (priority {trade_priorities[0][1]}) "
-                    f"for new signal (priority {channel_priority})"
-                )
-                
-                # Close the trade
-                account = self.account_manager.get_account(account_key)
-                if account:
-                    try:
-                        tl_client = account['client']
-                        
-                        # Close position
-                        await tl_client.close_position(
-                            position_id=lowest_priority_trade.tl_position_id
-                        )
-                        
-                        # Get exit price
-                        try:
-                            market_price = await tl_client.get_market_price(lowest_priority_trade.symbol)
-                            exit_price = market_price if market_price else lowest_priority_trade.entry_price
-                        except Exception:
-                            exit_price = lowest_priority_trade.entry_price
-                        
-                        # Calculate P&L in USD
-                        try:
-                            instruments = await tl_client.get_all_instruments()
-                            instrument = next(
-                                (i for i in instruments if lowest_priority_trade.symbol in i.get('name', '')),
-                                None
-                            )
-                            
-                            from ..risk.calculator import calculate_usd_pnl
-                            pnl = await calculate_usd_pnl(
-                                symbol=lowest_priority_trade.symbol,
-                                entry_price=lowest_priority_trade.entry_price,
-                                exit_price=exit_price,
-                                lot_size=lowest_priority_trade.lot_size,
-                                direction=lowest_priority_trade.direction,
-                                client=tl_client,
-                                instrument=instrument
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                            # Fallback
-                            if lowest_priority_trade.direction == 'BUY':
-                                pnl = (exit_price - lowest_priority_trade.entry_price) * lowest_priority_trade.lot_size * 100000
-                            else:
-                                pnl = (lowest_priority_trade.entry_price - exit_price) * lowest_priority_trade.lot_size * 100000
-                        
-                        await self.db.move_trade_to_history(
-                            lowest_priority_trade.trade_id,
-                            exit_price=exit_price,
-                            pnl=pnl,
-                            close_reason='PRIORITY_CLOSE'
-                        )
-                        logger.info(
-                            f"[{account_key}] ✓ Closed lower priority trade: P&L ${pnl:.2f}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"[{account_key}] Failed to close lower priority trade: {e}"
-                        )
-                        return {
-                            "status": "rejected",
-                            "reason": f"Concurrent limit reached and failed to close lower priority trade: {e}"
-                        }
-                
-                # Now execute the new signal
-                return await self._execute_on_account(signal, channel_id, account_key)
-            else:
-                # Reject the signal
-                logger.warning(
-                    f"[{account_key}] Signal rejected: concurrent limit reached "
-                    f"and incoming priority ({channel_priority}) not higher than "
-                    f"lowest active trade priority ({trade_priorities[0][1] if trade_priorities else 'N/A'})"
-                )
-                return {
-                    "status": "rejected",
-                    "reason": f"Concurrent limit reached ({current_count}/{max_concurrent}), "
-                             f"incoming priority not high enough"
-                }
+            # Reject the signal - do NOT force close existing trades
+            return {
+                "status": "rejected",
+                "reason": f"Concurrent limit reached ({current_count}/{max_concurrent}). "
+                         f"Wait for existing trades to close before accepting new signals."
+            }
         
         # Limit not reached, execute normally
         return await self._execute_on_account(signal, channel_id, account_key)
