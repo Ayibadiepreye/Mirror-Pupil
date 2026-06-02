@@ -5,23 +5,11 @@ Complete implementation with human-like behavior and anti-ban measures.
 """
 
 import asyncio
-import sys
 import random
 import time
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 from datetime import datetime
-
-# Force UTF-8 encoding for Windows console
-if sys.platform == 'win32':
-    try:
-        import io
-        if hasattr(sys.stdout, 'buffer'):
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-        if hasattr(sys.stderr, 'buffer'):
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
-    except (AttributeError, ValueError):
-        pass  # Already wrapped or not available
 
 from pytdbot import Client
 from pytdbot.types import Update, LogStreamFile

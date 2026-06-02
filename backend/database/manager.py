@@ -6,21 +6,9 @@ Connection pooling and query helpers for Neon PostgreSQL.
 
 import asyncio
 import os
-import sys
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import asyncpg
-
-# Force UTF-8 encoding for Windows console
-if sys.platform == 'win32':
-    try:
-        import io
-        if hasattr(sys.stdout, 'buffer'):
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-        if hasattr(sys.stderr, 'buffer'):
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
-    except (AttributeError, ValueError):
-        pass  # Already wrapped or not available
 from loguru import logger
 
 from .schema import SCHEMA_DDL, INITIAL_DATA, CLEANUP_QUERIES, SCHEMA_VERSION
