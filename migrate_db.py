@@ -1,7 +1,5 @@
-"""
-Mirror Pupil v5.1 - Database Migration Script
-Initializes Neon PostgreSQL database with complete schema.
-"""
+"""Mirror Pupil v5.1 - Database Migration Script
+Initializes Neon PostgreSQL database with complete schema."""
 
 import asyncio
 import os
@@ -13,7 +11,6 @@ load_dotenv()
 
 async def migrate_database():
     """Initialize database schema and insert default data."""
-    
     # Import after loading env vars
     from backend.database import DatabaseManager
     
@@ -36,13 +33,11 @@ async def migrate_database():
         # Connect to database
         logger.info("🔌 Connecting to Neon PostgreSQL...")
         await db.connect(min_size=2, max_size=5)
-        
         logger.info("✅ Connected successfully!")
         
         # Initialize schema (this will create all tables and insert default data)
         logger.info("📋 Initializing schema...")
         await db.initialize_schema()
-        
         logger.info("✅ Schema initialized!")
         
         # Verify tables were created
@@ -54,10 +49,10 @@ async def migrate_database():
                 WHERE table_schema = 'public'
                 ORDER BY table_name
             """)
-            
-            logger.info(f"✅ Found {len(tables)} tables:")
-            for table in tables:
-                logger.info(f"   • {table['table_name']}")
+        
+        logger.info(f"✅ Found {len(tables)} tables:")
+        for table in tables:
+            logger.info(f"   • {table['table_name']}")
         
         # Verify default data
         logger.info("🔍 Verifying default data...")
@@ -65,16 +60,18 @@ async def migrate_database():
         # Check channels
         async with db.pool.acquire() as conn:
             channels = await conn.fetch("SELECT * FROM channels ORDER BY priority")
-            logger.info(f"✅ Channels: {len(channels)}")
-            for ch in channels:
-                logger.info(f"   • {ch['display_name']} (ID: {ch['channel_id']}, Priority: {ch['priority']})")
+        
+        logger.info(f"✅ Channels: {len(channels)}")
+        for ch in channels:
+            logger.info(f"   • {ch['display_name']} (ID: {ch['channel_id']}, Priority: {ch['priority']})")
         
         # Check risk profiles
         async with db.pool.acquire() as conn:
             profiles = await conn.fetch("SELECT * FROM risk_profiles")
-            logger.info(f"✅ Risk Profiles: {len(profiles)}")
-            for prof in profiles:
-                logger.info(f"   • {prof['profile_name']} (Default: {prof['is_default']})")
+        
+        logger.info(f"✅ Risk Profiles: {len(profiles)}")
+        for prof in profiles:
+            logger.info(f"   • {prof['profile_name']} (Default: {prof['is_default']})")
         
         # Disconnect
         await db.disconnect()
@@ -96,7 +93,6 @@ async def migrate_database():
         import traceback
         traceback.print_exc()
         return False
-
 
 if __name__ == "__main__":
     # Run migration
