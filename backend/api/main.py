@@ -20,13 +20,26 @@ from ..core.balance_reconciliation import get_balance_monitor
 from ..core.trailing_stop_updater import get_trailing_stop_updater
 from ..core.pending_order_monitor import get_pending_order_monitor
 
-from .routes import accounts, channels, risk_profiles, trades, bot_control, notifications
-from .websocket import router as websocket_router
-
 
 # Global instances
 db: DatabaseManager = None
 trade_executor: TradeExecutor = None
+
+
+# Dependency functions (must be defined before importing routes to avoid circular import)
+def get_db() -> DatabaseManager:
+    """Get database instance for dependency injection."""
+    return db
+
+
+def get_executor() -> TradeExecutor:
+    """Get trade executor instance for dependency injection."""
+    return trade_executor
+
+
+# Import routes AFTER defining dependencies
+from .routes import accounts, channels, risk_profiles, trades, bot_control, notifications
+from .websocket import router as websocket_router
 
 
 @asynccontextmanager
@@ -149,15 +162,3 @@ async def health_check():
         "status": "healthy",
         "database": "connected" if db and db.pool else "disconnected"
     }
-
-
-# Dependency to get database instance
-def get_db() -> DatabaseManager:
-    """Get database instance for dependency injection."""
-    return db
-
-
-# Dependency to get trade executor instance
-def get_executor() -> TradeExecutor:
-    """Get trade executor instance for dependency injection."""
-    return trade_executor
