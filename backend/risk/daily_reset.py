@@ -164,23 +164,82 @@ class DailyResetHandler:
         # Account is flat at 5pm (all trades closed at 4:45pm), so equity = balance
         new_daily_start = account.current_balance
         
-        # Step 4: Update account in database
+        # Step 4: Check if daily breach should be cleared
+        # If account is breached, check if it's daily or overall
+        clear_breach = False
+        if account.breached:
+            # Get risk profile for overall floor calculation
+            if account.risk_profile_id:
+                from ..database import get_db
+                db = await get_db()
+                profile = await db.get_risk_profile(account.risk_profile_id)
+                if not profile:
+                    profile = await db.get_default_risk_profile()
+            else:
+                from ..database import get_db
+                db = await get_db()
+                profile = await db.get_default_risk_profile()
+            
+            if profile:
+                # Calculate overall floor
+                from ..risk.calculator import get_risk_calculator
+                calculator = get_risk_calculator()
+                overall_floor = calculator.calculate_overall_floor(account, profile)
+                
+                # If current balance is ABOVE overall floor, it was a daily breach only
+                if account.current_balance > overall_floor:
+                    clear_breach = True
+                    logger.info(
+                        f"[{account.account_key}] Daily breach will be cleared - "
+                        f"balance ${account.current_balance:.2f} > overall floor ${overall_floor:.2f}"
+                    )
+                else:
+                    logger.warning(
+                        f"[{account.account_key}] Overall breach active - "
+                        f"balance ${account.current_balance:.2f} <= overall floor ${overall_floor:.2f} - "
+                        f"trading remains disabled"
+                    )
+        
+        # Step 5: Update account in database
         try:
             async with self.db.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE accounts
-                    SET daily_start_balance = $1,
-                        daily_pnl = 0,
-                        last_synced_balance = $2,
-                        cycle_best_day_pnl = $3
-                    WHERE account_key = $4
-                    """,
-                    new_daily_start,
-                    account.current_balance,
-                    account.cycle_best_day_pnl,
-                    account.account_key
-                )
+                if clear_breach:
+                    # Clear daily breach flag
+                    await conn.execute(
+                        """
+                        UPDATE accounts
+                        SET daily_start_balance = $1,
+                            daily_pnl = 0,
+                            last_synced_balance = $2,
+                            cycle_best_day_pnl = $3,
+                            breached = FALSE,
+                            paused = FALSE
+                        WHERE account_key = $4
+                        """,
+                        new_daily_start,
+                        account.current_balance,
+                        account.cycle_best_day_pnl,
+                        account.account_key
+                    )
+                    logger.info(
+                        f"[{account.account_key}] ✓ Daily breach cleared - trading enabled"
+                    )
+                else:
+                    # Normal reset without clearing breach
+                    await conn.execute(
+                        """
+                        UPDATE accounts
+                        SET daily_start_balance = $1,
+                            daily_pnl = 0,
+                            last_synced_balance = $2,
+                            cycle_best_day_pnl = $3
+                        WHERE account_key = $4
+                        """,
+                        new_daily_start,
+                        account.current_balance,
+                        account.cycle_best_day_pnl,
+                        account.account_key
+                    )
             
             logger.info(
                 f"[{account.account_key}] ✓ Reset complete: "

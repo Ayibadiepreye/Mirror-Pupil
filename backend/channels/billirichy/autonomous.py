@@ -260,11 +260,33 @@ class BillirichyAutonomousManager:
                 except Exception:
                     exit_price = trade.entry_price  # Last resort fallback
             
-            # Calculate actual P&L (simplified calculation)
-            if trade.direction == 'BUY':
-                pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-            else:
-                pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+            # Calculate P&L in USD using proper conversion
+            try:
+                # Get instrument details for accurate calculation
+                instruments = await tl_client.get_all_instruments()
+                instrument = next(
+                    (i for i in instruments if trade.symbol in i.get('name', '')),
+                    None
+                )
+                
+                # Use the proper USD P&L calculation function
+                from ...risk.calculator import calculate_usd_pnl
+                pnl = await calculate_usd_pnl(
+                    symbol=trade.symbol,
+                    entry_price=trade.entry_price,
+                    exit_price=exit_price,
+                    lot_size=trade.lot_size,
+                    direction=trade.direction,
+                    client=tl_client,
+                    instrument=instrument
+                )
+            except Exception as e:
+                logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
+                # Fallback to simplified calculation
+                if trade.direction == 'BUY':
+                    pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+                else:
+                    pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
             
             # Determine outcome
             if pnl > 0:

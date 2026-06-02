@@ -256,6 +256,146 @@ async def calculate_usd_risk(
     return usd_risk
 
 
+async def calculate_usd_pnl(
+    symbol: str,
+    entry_price: float,
+    exit_price: float,
+    lot_size: float,
+    direction: str,
+    client,  # TradeLocker client
+    instrument: Optional[Dict] = None
+) -> float:
+    """
+    Calculate USD P&L for a closed trade with proper currency conversion.
+    
+    This function mirrors calculate_usd_risk() logic but for P&L calculation.
+    
+    Args:
+        symbol: Trading symbol (e.g., "EURUSD", "USDJPY", "XAUUSD")
+        entry_price: Entry price
+        exit_price: Exit price
+        lot_size: Lot size
+        direction: Trade direction ("BUY" or "SELL")
+        client: TradeLocker client (for fetching live prices)
+        instrument: Instrument data dict (optional, for contract size/tick data)
+    
+    Returns:
+        P&L in USD (positive for profit, negative for loss)
+    """
+    # 1. Validate inputs
+    if entry_price <= 0 or exit_price <= 0:
+        logger.warning(f"Invalid prices for {symbol}: entry={entry_price}, exit={exit_price}")
+        return 0.0
+    
+    # 2. Calculate price difference based on direction
+    if direction.upper() == 'BUY':
+        price_diff = exit_price - entry_price  # Positive if profit
+    else:  # SELL
+        price_diff = entry_price - exit_price  # Positive if profit
+    
+    if price_diff == 0:
+        return 0.0  # Break-even
+    
+    # 3. Get contract size from instrument data
+    contract_size = 100000.0  # Default for forex
+    if instrument:
+        contract_size = float(instrument.get("contract_size", 100000))
+    
+    # 4. Detect symbol type
+    symbol_type = detect_symbol_type(symbol)
+    base, quote = parse_symbol(symbol)
+    
+    logger.debug(
+        f"P&L calculation for {symbol}: type={symbol_type}, "
+        f"entry={entry_price}, exit={exit_price}, diff={price_diff:.5f}, "
+        f"lot={lot_size}, contract={contract_size}, direction={direction}"
+    )
+    
+    # 5. Calculate P&L based on type
+    if symbol_type == "index":
+        # Indices: Use tick size and tick value
+        tick_size = float(instrument.get("tick_size", 1.0)) if instrument else 1.0
+        tick_value = float(instrument.get("tick_value", 1.0)) if instrument else 1.0
+        
+        ticks_moved = price_diff / tick_size
+        usd_pnl = ticks_moved * tick_value * lot_size
+        
+        logger.debug(
+            f"Index P&L: {symbol} "
+            f"{price_diff:.2f} / {tick_size} × {tick_value} × {lot_size} = ${usd_pnl:.2f}"
+        )
+        
+    elif symbol_type == "quote_usd":
+        # Quote = USD (EURUSD, GBPUSD, XAUUSD)
+        # No conversion needed - P&L is already in USD
+        pnl_quote = price_diff * contract_size * lot_size
+        usd_pnl = pnl_quote
+        
+        logger.debug(
+            f"Quote USD P&L: {symbol} "
+            f"{price_diff:.5f} × {contract_size} × {lot_size} = ${usd_pnl:.2f}"
+        )
+        
+    elif symbol_type == "base_usd":
+        # Base = USD (USDJPY, USDCHF, USDCAD)
+        # Divide by exit price to convert from quote currency to USD
+        pnl_quote = price_diff * contract_size * lot_size
+        
+        if exit_price and exit_price > 0:
+            usd_pnl = pnl_quote / exit_price
+            logger.debug(
+                f"Base USD P&L: {symbol} "
+                f"{pnl_quote:.2f} {quote} / {exit_price:.5f} = ${usd_pnl:.2f}"
+            )
+        else:
+            logger.warning(f"No exit price for {symbol}, using 1:1")
+            usd_pnl = pnl_quote
+        
+    elif symbol_type == "cross":
+        # Cross pairs (EURGBP, EURJPY, GBPJPY)
+        # Fetch conversion rate to USD
+        pnl_quote = price_diff * contract_size * lot_size
+        
+        if quote == "JPY":
+            # Special handling for JPY cross pairs (EURJPY, GBPJPY)
+            # Fetch USDJPY rate
+            try:
+                usdjpy_rate = await client.get_market_price("USDJPY")
+                if not usdjpy_rate or usdjpy_rate <= 0:
+                    usdjpy_rate = 150.0  # Default fallback
+                
+                usd_pnl = pnl_quote / usdjpy_rate
+                logger.debug(
+                    f"Cross JPY P&L: {symbol} "
+                    f"{pnl_quote:.2f} JPY / {usdjpy_rate:.2f} = ${usd_pnl:.2f}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch USDJPY rate: {e}")
+                usd_pnl = pnl_quote / 150.0  # Fallback
+        else:
+            # Other cross pairs (EURGBP, EURCHF, etc.)
+            # Fetch conversion rate
+            try:
+                conversion_rate = await get_conversion_rate(client, base, quote, exit_price)
+                usd_pnl = pnl_quote * conversion_rate
+                logger.debug(
+                    f"Cross P&L: {symbol} "
+                    f"{pnl_quote:.2f} {quote} × {conversion_rate:.5f} = ${usd_pnl:.2f}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to get conversion rate for {symbol}: {e}")
+                usd_pnl = pnl_quote * 0.01  # Fallback
+    
+    else:
+        # Unknown type - use conservative estimate
+        logger.warning(f"Unknown symbol type for {symbol}, using conservative estimate")
+        pnl_quote = price_diff * contract_size * lot_size
+        usd_pnl = pnl_quote * 0.01
+    
+    logger.info(f"✓ USD P&L for {symbol}: ${usd_pnl:.2f}")
+    return usd_pnl
+
+
 # Legacy sync function for backward compatibility
 def calculate_price_delta(
     entry_price: float,

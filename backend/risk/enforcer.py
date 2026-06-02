@@ -193,6 +193,59 @@ class RiskEnforcer:
                 "reason": f"Trade risk ${trade_risk:.2f} exceeds overall room ${overall_room:.2f}"
             }
         
+        # Check 5: Daily loss accumulation (active risk + today's realized losses + new trade)
+        # Get today's closed trades that ended in loss
+        from datetime import date
+        async with self.db.pool.acquire() as conn:
+            daily_losses = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(ABS(pnl)), 0)
+                FROM trade_history
+                WHERE account_key = $1
+                AND DATE(exit_time) = $2
+                AND pnl < 0
+                """,
+                account.account_key,
+                date.today()
+            )
+        
+        total_daily_losses = existing_risk + daily_losses + trade_risk
+        daily_loss_limit = account.initial_balance * profile.daily_loss_pct / 100
+        
+        if total_daily_losses > daily_loss_limit:
+            return {
+                "allowed": False,
+                "reason": (
+                    f"Daily loss accumulation ${total_daily_losses:.2f} exceeds limit ${daily_loss_limit:.2f} "
+                    f"(active: ${existing_risk:.2f}, realized today: ${daily_losses:.2f}, new: ${trade_risk:.2f})"
+                )
+            }
+        
+        # Check 6: Overall loss accumulation (active risk + all-time realized losses + new trade)
+        # Get all closed trades that ended in loss
+        async with self.db.pool.acquire() as conn:
+            overall_losses = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(ABS(pnl)), 0)
+                FROM trade_history
+                WHERE account_key = $1
+                AND pnl < 0
+                """,
+                account.account_key
+            )
+        
+        total_overall_losses = existing_risk + overall_losses + trade_risk
+        overall_loss_limit = account.initial_balance * profile.overall_loss_pct / 100
+        
+        if total_overall_losses > overall_loss_limit:
+            return {
+                "allowed": False,
+                "reason": (
+                    f"Overall loss accumulation ${total_overall_losses:.2f} exceeds limit ${overall_loss_limit:.2f} "
+                    f"(active: ${existing_risk:.2f}, realized all-time: ${overall_losses:.2f}, new: ${trade_risk:.2f})"
+                )
+            }
+        
         # All checks passed
         return {
             "allowed": True,
@@ -363,11 +416,33 @@ class RiskEnforcer:
                         except Exception:
                             exit_price = trade.entry_price  # Last resort fallback
                     
-                    # Calculate P&L (simplified)
-                    if trade.direction == 'BUY':
-                        pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-                    else:
-                        pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                    # Calculate P&L in USD using proper conversion
+                    try:
+                        # Get instrument details for accurate calculation
+                        instruments = await tl_client.get_all_instruments()
+                        instrument = next(
+                            (i for i in instruments if trade.symbol in i.get('name', '')),
+                            None
+                        )
+                        
+                        # Use the proper USD P&L calculation function
+                        from ..risk.calculator import calculate_usd_pnl
+                        pnl = await calculate_usd_pnl(
+                            symbol=trade.symbol,
+                            entry_price=trade.entry_price,
+                            exit_price=exit_price,
+                            lot_size=trade.lot_size,
+                            direction=trade.direction,
+                            client=tl_client,
+                            instrument=instrument
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
+                        # Fallback to simplified calculation
+                        if trade.direction == 'BUY':
+                            pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
+                        else:
+                            pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
                     
                     # Move to history
                     await self.db.close_active_trade(
