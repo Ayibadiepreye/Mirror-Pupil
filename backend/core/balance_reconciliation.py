@@ -109,7 +109,7 @@ class BalanceReconciliationMonitor:
         
         try:
             # Poll actual balance
-            account_info = await tl_client.get_account_state()
+            account_info = await tl_client.get_account_state(account.tl_account_id)
             actual_balance = float(account_info.get('balance', 0))
             
         except Exception as e:
@@ -261,7 +261,7 @@ class BalanceReconciliationMonitor:
         profile = await self._get_risk_profile(account)
         payout_buffer = account.initial_balance * (profile.payout_buffer_pct / 100)
         
-        overall_floor = self._calculate_overall_floor(account)
+        overall_floor = await self._calculate_overall_floor(account)
         withdrawable = current_balance - overall_floor - payout_buffer
         
         return max(withdrawable, 0.0)
