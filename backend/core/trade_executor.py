@@ -11,7 +11,7 @@ import os
 from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
 from ..database import DatabaseManager, ActiveTrade
-from ..risk import RiskEnforcer, calculate_price_delta
+from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
 
 
 class TradeExecutor:
@@ -55,6 +55,7 @@ class TradeExecutor:
         Execute a parsed signal on one or more accounts.
         
         Enforces:
+        - Trading hours validation (weekends, EOD, pre-market)
         - Channel subscription filtering
         - Concurrent trade limits per account
         - Channel priority when limit is reached
@@ -67,6 +68,23 @@ class TradeExecutor:
         Returns:
             Dict mapping account_key → execution result
         """
+        # CRITICAL: Check trading hours FIRST (before any execution)
+        trading_hours = get_trading_hours_validator()
+        allowed, reason = trading_hours.is_trading_allowed()
+        
+        if not allowed:
+            next_window = trading_hours.get_next_trading_window()
+            logger.warning(
+                f"Signal rejected: {reason}. "
+                f"Trading resumes at {next_window}. "
+                f"Signal: {signal.symbol} {signal.direction}"
+            )
+            return {
+                "status": "rejected",
+                "reason": reason,
+                "next_trading_window": next_window
+            }
+        
         if account_keys is None:
             # Get all accounts subscribed to this channel
             all_accounts = await self.db.get_all_accounts()

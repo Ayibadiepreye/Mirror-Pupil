@@ -8,6 +8,7 @@ from .enforcer import RiskEnforcer, get_risk_enforcer
 from .daily_reset import DailyResetHandler
 from .eod_close import EODCloseHandler
 from .consistency import ConsistencyScoreCalculator
+from .trading_hours import TradingHoursValidator, get_trading_hours_validator
 
 __all__ = [
     "RiskCalculator",
@@ -17,4 +18,6 @@ __all__ = [
     "DailyResetHandler",
     "EODCloseHandler",
     "ConsistencyScoreCalculator",
+    "TradingHoursValidator",
+    "get_trading_hours_validator",
 ]

@@ -110,19 +110,19 @@ class EODCloseHandler:
     
     async def close_account_trades(self, account_key: str) -> int:
         """
-        Close all open trades for a specific account.
+        Close all open trades AND cancel all pending orders for a specific account.
         
         Returns:
-            Number of trades closed
+            Number of trades/orders closed
         """
-        # Get all active trades
+        # Get all active trades (includes pending orders with status='pending')
         active_trades = await self.db.get_active_trades(account_key)
         
         if not active_trades:
             logger.debug(f"[{account_key}] No active trades to close")
             return 0
         
-        logger.info(f"[{account_key}] Closing {len(active_trades)} active trade(s)...")
+        logger.info(f"[{account_key}] Closing {len(active_trades)} active trade(s)/order(s)...")
         
         closed_count = 0
         
@@ -137,7 +137,34 @@ class EODCloseHandler:
                     logger.error(f"No TradeLocker client for {account_key}")
                     continue
                 
-                # Close position on TradeLocker
+                # Handle pending orders differently from filled positions
+                if trade.status == 'pending':
+                    # Cancel the pending order
+                    try:
+                        await tl_client.cancel_order(trade.tl_order_id)
+                        logger.info(
+                            f"[{account_key}] Cancelled pending order {trade.trade_id}: "
+                            f"{trade.symbol} {trade.direction} @ {trade.entry_price}"
+                        )
+                        
+                        # Move to history with zero P&L
+                        success = await self.db.close_active_trade(
+                            trade_id=trade.trade_id,
+                            exit_price=trade.entry_price,
+                            pnl=0.0,
+                            outcome="BE",
+                            close_reason="EOD_CANCELLED"
+                        )
+                        
+                        if success:
+                            closed_count += 1
+                        
+                        continue
+                    except Exception as e:
+                        logger.error(f"Failed to cancel pending order {trade.trade_id}: {e}")
+                        continue
+                
+                # Close filled position on TradeLocker
                 await tl_client.close_position(trade.tl_position_id)
                 
                 # Get actual exit price from closed position

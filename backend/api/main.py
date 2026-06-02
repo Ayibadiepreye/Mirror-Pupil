@@ -16,6 +16,8 @@ load_dotenv()
 
 from ..database import DatabaseManager
 from ..risk import get_risk_enforcer
+from ..risk.eod_close import get_eod_close_handler
+from ..risk.daily_reset import get_daily_reset_handler
 from ..core.account_manager import get_account_manager
 from ..core.trade_executor import TradeExecutor
 from ..channels.billirichy.autonomous import get_billirichy_autonomous_manager
@@ -101,6 +103,14 @@ async def lifespan(app: FastAPI):
     await pending_monitor.start_monitoring()
     logger.info("✓ Pending order monitor started")
     
+    # Initialize EOD close handler (closes all trades at 4:45 PM EST)
+    eod_handler = await get_eod_close_handler(db)
+    logger.info("✓ EOD close handler started (4:45 PM EST)")
+    
+    # Initialize daily reset handler (resets accounts at 5:00 PM EST)
+    reset_handler = await get_daily_reset_handler(db)
+    logger.info("✓ Daily reset handler started (5:00 PM EST)")
+    
     # Initialize Telegram client integration
     telegram = get_telegram_integration()
     telegram_started = await telegram.start()
@@ -117,10 +127,11 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down Mirror Pupil Backend...")
     
     # Stop Telegram client
-    telegram = get_telegram_integration()
     await telegram.stop()
     
     # Stop all background tasks
+    await eod_handler.stop_eod_close_scheduler()
+    await reset_handler.stop_daily_reset_scheduler()
     await billirichy_manager.stop_managing()
     await firepips_manager.stop_managing()
     await balance_monitor.stop_monitoring()
