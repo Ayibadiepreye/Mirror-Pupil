@@ -624,6 +624,51 @@ class DatabaseManager:
             logger.error(f"Failed to remove from waiting room: {e}")
             return False
     
+    # ==================== TRADE HISTORY QUERIES ====================
+    
+    async def get_trade_history(
+        self,
+        account_key: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[Dict]:
+        """
+        Get trade history with optional filtering.
+        
+        Args:
+            account_key: Optional account filter
+            limit: Maximum number of records to return
+            offset: Offset for pagination
+        
+        Returns:
+            List of trade history records
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                if account_key:
+                    rows = await conn.fetch(
+                        """
+                        SELECT * FROM trade_history
+                        WHERE account_key = $1
+                        ORDER BY exit_time DESC
+                        LIMIT $2 OFFSET $3
+                        """,
+                        account_key, limit, offset
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT * FROM trade_history
+                        ORDER BY exit_time DESC
+                        LIMIT $1 OFFSET $2
+                        """,
+                        limit, offset
+                    )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get trade history: {e}")
+            return []
+    
     # ==================== MESSAGE CACHE QUERIES ====================
     
     async def is_message_processed(self, msg_id: int, channel_id: int) -> bool:

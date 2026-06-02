@@ -70,6 +70,26 @@ export interface ActiveTrade {
   risk_usd: number | null
 }
 
+export interface TradeHistory {
+  history_id: number
+  account_key: string
+  channel_id: number
+  signal_id: string
+  sub_signal_id: string | null
+  symbol: string
+  direction: string
+  entry_price: number
+  exit_price: number
+  sl: number | null
+  tp: number | null
+  lot_size: number
+  entry_time: string
+  exit_time: string
+  pnl: number
+  outcome: string
+  close_reason: string
+}
+
 export interface BotStatus {
   status: string
   dry_run: boolean
