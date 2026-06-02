@@ -74,6 +74,14 @@ async def migrate_database():
         for prof in profiles:
             logger.info(f"   • {prof['profile_name']} (Default: {prof['is_default']})")
         
+        # Check bot settings
+        async with db.pool.acquire() as conn:
+            settings = await conn.fetch("SELECT * FROM bot_settings ORDER BY setting_key")
+        
+        logger.info(f"✅ Bot Settings: {len(settings)}")
+        for setting in settings:
+            logger.info(f"   • {setting['setting_key']} = {setting['setting_value']}")
+        
         # Disconnect
         await db.disconnect()
         

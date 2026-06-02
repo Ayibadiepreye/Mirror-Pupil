@@ -1045,20 +1045,7 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to delete channel {channel_id}: {e}")
             return False
-
-
-# Global database manager instance
-_db_manager: Optional[DatabaseManager] = None
-
-
-async def get_db() -> DatabaseManager:
-    """Get the global database manager instance."""
-    global _db_manager
-    if _db_manager is None:
-        _db_manager = DatabaseManager()
-        await _db_manager.connect()
-    return _db_manager
-
+    
     # ==================== BOT SETTINGS METHODS ====================
     
     async def get_bot_setting(self, setting_key: str) -> Optional[str]:
@@ -1124,3 +1111,17 @@ async def get_db() -> DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get bot settings: {e}")
             return {}
+
+
+# Global database manager instance
+_db_manager: Optional[DatabaseManager] = None
+
+
+async def get_db() -> DatabaseManager:
+    """Get the global database manager instance."""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = DatabaseManager()
+        await _db_manager.connect()
+    return _db_manager
+
