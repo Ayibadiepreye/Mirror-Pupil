@@ -154,7 +154,7 @@ class EODCloseHandler:
                     else:
                         # Position already closed, use market price
                         raise ValueError("Position already closed")
-                except:
+                except Exception:
                     # Fallback: get current market price
                     try:
                         # Use existing get_market_price method
@@ -163,7 +163,7 @@ class EODCloseHandler:
                             exit_price = market_price
                         else:
                             exit_price = trade.entry_price
-                    except:
+                    except Exception:
                         exit_price = trade.entry_price  # Last resort fallback
                 
                 # Calculate actual P&L (simplified calculation)

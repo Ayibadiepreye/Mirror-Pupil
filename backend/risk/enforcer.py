@@ -352,7 +352,7 @@ class RiskEnforcer:
                         else:
                             # Position already closed, use market price
                             raise ValueError("Position already closed")
-                    except:
+                    except Exception:
                         # Fallback: get current market price
                         try:
                             market_price = await tl_client.get_market_price(trade.symbol)
@@ -360,7 +360,7 @@ class RiskEnforcer:
                                 exit_price = market_price
                             else:
                                 exit_price = trade.entry_price
-                        except:
+                        except Exception:
                             exit_price = trade.entry_price  # Last resort fallback
                     
                     # Calculate P&L (simplified)
