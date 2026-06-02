@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
     logger.info("✓ Trailing stop updater started")
     
     # Initialize pending order monitor
-    pending_monitor = get_pending_order_monitor(db)
+    pending_monitor = await get_pending_order_monitor(db)
     await pending_monitor.start_monitoring()
     logger.info("✓ Pending order monitor started")
     
