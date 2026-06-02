@@ -23,6 +23,8 @@ from ..channels.firepips.autonomous import get_firepips_autonomous_manager
 from ..core.balance_reconciliation import get_balance_monitor
 from ..core.trailing_stop_updater import get_trailing_stop_updater
 from ..core.pending_order_monitor import get_pending_order_monitor
+from ..telegram_integration import get_telegram_integration
+from ..channels.registry import get_registry
 
 
 # Global instances
@@ -66,6 +68,11 @@ async def lifespan(app: FastAPI):
     await trade_executor.initialize()
     logger.info("✓ Trade executor initialized")
     
+    # Inject TradeExecutor into channel registry (CRITICAL: enables signal execution)
+    registry = get_registry()
+    registry.inject_trade_executor(trade_executor)
+    logger.info("✓ TradeExecutor injected into channel plugins")
+    
     # Initialize risk enforcer
     risk_enforcer = await get_risk_enforcer(db)
     logger.info("✓ Risk enforcer initialized")
@@ -94,12 +101,24 @@ async def lifespan(app: FastAPI):
     await pending_monitor.start_monitoring()
     logger.info("✓ Pending order monitor started")
     
+    # Initialize Telegram client integration
+    telegram = get_telegram_integration()
+    telegram_started = await telegram.start()
+    if telegram_started:
+        logger.info("✓ Telegram client integration started")
+    else:
+        logger.warning("⚠️ Telegram client not started (check credentials in .env)")
+    
     logger.info("✅ Mirror Pupil Backend Ready")
     
     yield
     
     # Shutdown
     logger.info("🛑 Shutting down Mirror Pupil Backend...")
+    
+    # Stop Telegram client
+    telegram = get_telegram_integration()
+    await telegram.stop()
     
     # Stop all background tasks
     await billirichy_manager.stop_managing()

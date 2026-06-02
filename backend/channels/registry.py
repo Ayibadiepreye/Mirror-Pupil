@@ -19,7 +19,18 @@ class ChannelRegistry:
     
     def __init__(self):
         self._plugins: Dict[int, ChannelPlugin] = {}
+        self._trade_executor = None  # Will be injected
         self._load_builtin_channels()
+    
+    def inject_trade_executor(self, trade_executor):
+        """
+        Inject TradeExecutor into all plugins.
+        Must be called after TradeExecutor is initialized.
+        """
+        self._trade_executor = trade_executor
+        for plugin in self._plugins.values():
+            plugin._trade_executor = trade_executor
+        logger.info(f"✓ Injected TradeExecutor into {len(self._plugins)} plugin(s)")
     
     def _load_builtin_channels(self):
         """Load built-in channel plugins (BillirichyFX and Firepips)."""
@@ -68,6 +79,9 @@ class ChannelRegistry:
             plugin: ChannelPlugin instance
         """
         self._plugins[plugin.channel_id] = plugin
+        # Inject trade executor if already available
+        if self._trade_executor:
+            plugin._trade_executor = self._trade_executor
         logger.info(f"✓ Registered plugin: {plugin.display_name} (ID: {plugin.channel_id})")
     
     def unregister_plugin(self, channel_id: int):

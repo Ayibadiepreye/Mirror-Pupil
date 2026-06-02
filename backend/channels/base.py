@@ -102,6 +102,7 @@ class ChannelPlugin(ABC):
         self.channel_id = channel_id
         self.display_name = display_name
         self._waiting_room: dict = {}  # {(symbol, direction): BareSignal}
+        self._trade_executor = None  # Will be injected by registry
     
     @property
     @abstractmethod
@@ -216,12 +217,39 @@ class ChannelPlugin(ABC):
         mgmt = await self.parse_management(message, clean_text)
         if mgmt:
             logger.info(f"[{self.display_name}] {mgmt}")
+            
+            # Execute management action via TradeExecutor
+            if self._trade_executor:
+                try:
+                    await self._trade_executor.execute_management(
+                        mgmt=mgmt,
+                        account_keys=None  # Execute on all accounts
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.display_name}] Failed to execute management: {e}")
+            else:
+                logger.warning(f"[{self.display_name}] TradeExecutor not injected - management not executed")
+            
             return
         
         # Try entry parsing
         signal = await self.parse_entry(message, clean_text)
         if signal:
             logger.info(f"[{self.display_name}] {signal}")
+            
+            # Execute the signal via TradeExecutor
+            if self._trade_executor:
+                try:
+                    await self._trade_executor.execute_signal(
+                        signal=signal,
+                        channel_id=self.channel_id,
+                        account_keys=None  # Execute on all subscribed accounts
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.display_name}] Failed to execute signal: {e}")
+            else:
+                logger.warning(f"[{self.display_name}] TradeExecutor not injected - signal not executed")
+            
             return
         
         logger.debug(f"[{self.display_name}] Message {msg_id} - no match")
@@ -332,6 +360,19 @@ class ChannelPlugin(ABC):
         
         logger.info(f"[{self.display_name}] {signal}")
         
+        # Execute the completed signal via TradeExecutor
+        if self._trade_executor:
+            try:
+                await self._trade_executor.execute_signal(
+                    signal=signal,
+                    channel_id=self.channel_id,
+                    account_keys=None  # Execute on all subscribed accounts
+                )
+            except Exception as e:
+                logger.error(f"[{self.display_name}] Failed to execute completed signal: {e}")
+        else:
+            logger.warning(f"[{self.display_name}] TradeExecutor not injected - completed signal not executed")
+        
         return True
     
     async def _handle_waiting_room_completion(self, message, clean_text: str):
@@ -363,6 +404,19 @@ class ChannelPlugin(ABC):
             del self._waiting_room[key]
             
             logger.info(f"[{self.display_name}] Waiting room: Completed! {signal}")
+            
+            # Execute the completed signal via TradeExecutor
+            if self._trade_executor:
+                try:
+                    await self._trade_executor.execute_signal(
+                        signal=signal,
+                        channel_id=self.channel_id,
+                        account_keys=None  # Execute on all subscribed accounts
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.display_name}] Failed to execute completed signal from edit: {e}")
+            else:
+                logger.warning(f"[{self.display_name}] TradeExecutor not injected - completed signal not executed")
         else:
             logger.debug(f"[{self.display_name}] Waiting room: Still incomplete")
     
