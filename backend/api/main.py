@@ -1,13 +1,21 @@
+# -*- coding: utf-8 -*-
 """
 Mirror Pupil v5.1 - FastAPI Main Application
 Entry point for the REST API and WebSocket server.
 """
 
 import os
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+
+# Force UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from ..database import DatabaseManager
 from ..risk import get_risk_enforcer

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Mirror Pupil v5.1 - Database Manager
 Connection pooling and query helpers for Neon PostgreSQL.
@@ -5,9 +6,16 @@ Connection pooling and query helpers for Neon PostgreSQL.
 
 import asyncio
 import os
+import sys
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import asyncpg
+
+# Force UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 from loguru import logger
 
 from .schema import SCHEMA_DDL, INITIAL_DATA, CLEANUP_QUERIES, SCHEMA_VERSION

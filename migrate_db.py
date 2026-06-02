@@ -1,10 +1,18 @@
+# -*- coding: utf-8 -*-
 """Mirror Pupil v5.1 - Database Migration Script
 Initializes Neon PostgreSQL database with complete schema."""
 
 import asyncio
 import os
+import sys
 from dotenv import load_dotenv
 from loguru import logger
+
+# Force UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Load environment variables
 load_dotenv()

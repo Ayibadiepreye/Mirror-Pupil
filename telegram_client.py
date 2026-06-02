@@ -1,14 +1,22 @@
+# -*- coding: utf-8 -*-
 """
 Mirror Pupil v5.1 - Telegram Client (Pytdbot/TDLib)
 Complete implementation with human-like behavior and anti-ban measures.
 """
 
 import asyncio
+import sys
 import random
 import time
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 from datetime import datetime
+
+# Force UTF-8 encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from pytdbot import Client
 from pytdbot.types import Update, LogStreamFile
