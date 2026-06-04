@@ -80,9 +80,9 @@ class AccountManager:
             accounts = await client.get_all_accounts()
             
             for acct in accounts:
-                account_id = acct.get('id') or acct.get('accountId')
-                account_number = acct.get('accountNumber') or acct.get('number')
-                balance = acct.get('balance', 0.0)
+                account_id = acct.get('id')
+                account_number = acct.get('accNum', account_id)
+                balance = acct.get('accountBalance', 0.0)
                 
                 account_key = f"{email}:{account_id}"
                 
@@ -221,7 +221,7 @@ class AccountManager:
         closed_count = 0
         
         for pos in positions:
-            position_id = pos.get('id') or pos.get('positionId')
+            position_id = pos.get('positionId') or pos.get('id')
             
             try:
                 await client.close_position(position_id)

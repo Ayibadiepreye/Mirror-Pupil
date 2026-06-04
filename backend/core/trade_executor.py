@@ -293,15 +293,8 @@ class TradeExecutor:
             if not routes['trade']:
                 raise Exception(f"Instrument {signal.symbol} does not have TRADE route")
             
-            # 4c. Get instrument details for lot step
-            instruments = await client.get_all_instruments()
-            instrument = next(
-                (i for i in instruments if i.get('tradableInstrumentId') == instrument_id),
-                None
-            )
-            
-            if not instrument:
-                raise Exception(f"Instrument details not found for {signal.symbol}")
+            # 4c. Get instrument details using new wrapper method
+            instrument = await client.get_instrument(signal.symbol)
             
             # Step 5: Validate trade with risk enforcer (now that we have instrument)
             if self.risk_enforcer and signal.sl:
@@ -329,7 +322,7 @@ class TradeExecutor:
             else:
                 trade_risk = 0.0  # No SL = no risk calculation
             
-            lot_step = instrument.get('lotStep', 0.01)
+            lot_step = instrument.get('lot_step', 0.01)
             
             # Step 6: Round lot size
             lot_size = client.round_lot_size(self.default_lot_size, lot_step)
@@ -366,7 +359,7 @@ class TradeExecutor:
             # Step 9: Extract order details
             order_id = order.get('orderId') or order.get('id')
             position_id = order.get('positionId')
-            fill_price = order.get('fillPrice') or order.get('price')
+            fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
             order_status = order.get('status', '').lower()
             
             # Determine if order is filled or pending

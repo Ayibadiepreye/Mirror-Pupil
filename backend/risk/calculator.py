@@ -151,8 +151,23 @@ async def calculate_usd_risk(
     
     # 2. Get contract size from instrument data
     contract_size = 100000.0  # Default for forex
+    tick_size_val = None
+    tick_value_val = None
+    
     if instrument:
+        # If instrument dict passed in, use it
         contract_size = float(instrument.get("contract_size", 100000))
+        tick_size_val = instrument.get("tick_size")
+        tick_value_val = instrument.get("tick_value")
+    else:
+        # Otherwise fetch from client
+        try:
+            instrument_specs = await client.get_instrument(symbol)
+            contract_size = instrument_specs.get("contract_size", 100000.0)
+            tick_size_val = instrument_specs.get("tick_size")
+            tick_value_val = instrument_specs.get("tick_value")
+        except Exception as e:
+            logger.warning(f"Failed to fetch instrument specs for {symbol}: {e}, using defaults")
     
     # 3. Detect symbol type
     symbol_type = detect_symbol_type(symbol)
@@ -167,8 +182,8 @@ async def calculate_usd_risk(
     # 4. Calculate risk based on type
     if symbol_type == "index":
         # Indices: Use tick size and tick value
-        tick_size = float(instrument.get("tick_size", 1.0)) if instrument else 1.0
-        tick_value = float(instrument.get("tick_value", 1.0)) if instrument else 1.0
+        tick_size = tick_size_val if tick_size_val else (float(instrument.get("tick_size", 1.0)) if instrument else 1.0)
+        tick_value = tick_value_val if tick_value_val else (float(instrument.get("tick_value", 1.0)) if instrument else 1.0)
         
         ticks_at_risk = price_diff / tick_size
         usd_risk = ticks_at_risk * tick_value * lot_size
@@ -298,8 +313,23 @@ async def calculate_usd_pnl(
     
     # 3. Get contract size from instrument data
     contract_size = 100000.0  # Default for forex
+    tick_size_val = None
+    tick_value_val = None
+    
     if instrument:
+        # If instrument dict passed in, use it
         contract_size = float(instrument.get("contract_size", 100000))
+        tick_size_val = instrument.get("tick_size")
+        tick_value_val = instrument.get("tick_value")
+    else:
+        # Otherwise fetch from client
+        try:
+            instrument_specs = await client.get_instrument(symbol)
+            contract_size = instrument_specs.get("contract_size", 100000.0)
+            tick_size_val = instrument_specs.get("tick_size")
+            tick_value_val = instrument_specs.get("tick_value")
+        except Exception as e:
+            logger.warning(f"Failed to fetch instrument specs for {symbol}: {e}, using defaults")
     
     # 4. Detect symbol type
     symbol_type = detect_symbol_type(symbol)
@@ -314,8 +344,8 @@ async def calculate_usd_pnl(
     # 5. Calculate P&L based on type
     if symbol_type == "index":
         # Indices: Use tick size and tick value
-        tick_size = float(instrument.get("tick_size", 1.0)) if instrument else 1.0
-        tick_value = float(instrument.get("tick_value", 1.0)) if instrument else 1.0
+        tick_size = tick_size_val if tick_size_val else (float(instrument.get("tick_size", 1.0)) if instrument else 1.0)
+        tick_value = tick_value_val if tick_value_val else (float(instrument.get("tick_value", 1.0)) if instrument else 1.0)
         
         ticks_moved = price_diff / tick_size
         usd_pnl = ticks_moved * tick_value * lot_size

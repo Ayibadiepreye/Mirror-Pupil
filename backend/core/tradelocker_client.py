@@ -590,6 +590,95 @@ class TradeLockerClient:
         
         return []
     
+    async def get_instrument(self, symbol: str) -> Dict:
+        """
+        Get instrument specifications with contract_size, tick_size, tick_value.
+        
+        This wraps get_instrument_details() which has the detailed specs that
+        get_all_instruments() doesn't include.
+        
+        Args:
+            symbol: Trading symbol (e.g., "EURUSD", "USDJPY")
+        
+        Returns:
+            Dict with contract_size, tick_size, tick_value, min/max/step
+        """
+        # Step 1: Resolve symbol to instrument_id
+        instrument_id = await self.get_instrument_id_from_symbol_name(symbol)
+        if not instrument_id:
+            logger.warning(f"[{self.credential_key}] Symbol not found: {symbol}, using defaults")
+            return self._default_instrument_specs(symbol)
+        
+        try:
+            # Step 2: Call get_instrument_details (sync method, needs thread pool)
+            details = await _to_thread_with_timeout(
+                self.client.get_instrument_details,
+                int(instrument_id),
+                timeout=10.0
+            )
+            
+            # Step 3: Extract fields with defensive array/scalar handling
+            # tickSize - can be array or scalar
+            tick_size = details.get("tickSize")
+            if isinstance(tick_size, list) and tick_size:
+                tick_size = tick_size[0].get("tickSize", 0.01)
+            elif isinstance(tick_size, (int, float)):
+                tick_size = float(tick_size)
+            else:
+                tick_size = 0.01
+            
+            # tickCost (tick value) - can be array or scalar
+            tick_cost = details.get("tickCost")
+            if isinstance(tick_cost, list) and tick_cost:
+                tick_cost = tick_cost[0].get("tickCost", 1.0)
+            elif isinstance(tick_cost, (int, float)):
+                tick_cost = float(tick_cost)
+            else:
+                tick_cost = 1.0
+            
+            # lotSize = contract size
+            lot_size = details.get("lotSize", 100000)
+            
+            # lotSizeStep - can be array or scalar
+            lot_step = details.get("lotSizeStep", 0.01)
+            if isinstance(lot_step, list) and lot_step:
+                lot_step = lot_step[0].get("lotSizeStep", 0.01)
+            elif isinstance(lot_step, (int, float)):
+                lot_step = float(lot_step)
+            else:
+                lot_step = 0.01
+            
+            logger.debug(
+                f"[{self.credential_key}] {symbol} specs: "
+                f"contract={lot_size}, tick_size={tick_size}, tick_value={tick_cost}"
+            )
+            
+            return {
+                "symbol": symbol,
+                "contract_size": float(lot_size) if lot_size else 100000.0,
+                "tick_size": float(tick_size) if tick_size else 0.01,
+                "tick_value": float(tick_cost) if tick_cost else 1.0,
+                "min_quantity": float(details.get("minLot", 0.01)),
+                "max_quantity": float(details.get("maxLot", 100.0)),
+                "lot_step": float(lot_step)
+            }
+            
+        except Exception as e:
+            logger.warning(f"[{self.credential_key}] Failed to get instrument details for {symbol}: {e}")
+            return self._default_instrument_specs(symbol)
+    
+    def _default_instrument_specs(self, symbol: str) -> Dict:
+        """Fallback defaults when instrument details unavailable."""
+        return {
+            "symbol": symbol,
+            "contract_size": 100000.0,  # Standard forex lot
+            "tick_size": 0.01,
+            "tick_value": 1.0,
+            "min_quantity": 0.01,
+            "max_quantity": 100.0,
+            "lot_step": 0.01
+        }
+    
     async def get_market_price(self, symbol: str) -> Optional[float]:
         """
         Get current market price (mid price) for a symbol.

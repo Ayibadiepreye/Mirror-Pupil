@@ -156,10 +156,10 @@ async def test_open_positions(manager: AccountManager):
         if positions:
             print(f"  ✓ Found {len(positions)} open position(s):")
             for pos in positions:
-                symbol = pos.get('symbol', 'Unknown')
+                symbol = pos.get('symbol') or pos.get('instrumentName', 'Unknown')
                 side = pos.get('side', 'Unknown')
                 qty = pos.get('quantity', 0)
-                pnl = pos.get('unrealizedPnL', 0)
+                pnl = pos.get('unrealizedProfitLoss', 0)
                 print(f"    • {symbol} {side} {qty} lots (P&L: ${pnl:,.2f})")
         else:
             print(f"  ✓ No open positions")
