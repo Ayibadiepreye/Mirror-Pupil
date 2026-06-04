@@ -160,7 +160,8 @@ class TradeLockerClient:
                         "server": self.server
                     }
                 ) as response:
-                    if response.status == 200:
+                    # Accept both 200 OK and 201 Created
+                    if response.status in [200, 201]:
                         data = await response.json()
                         self.access_token = data.get("accessToken")
                         self.refresh_token = data.get("refreshToken")
