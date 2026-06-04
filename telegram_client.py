@@ -379,12 +379,14 @@ class HumanLikeTelegramClient:
 import sys
 from pathlib import Path
 
-# Add backend to path
+# Add backend to path for channel registry
 backend_path = Path(__file__).parent / "backend"
-sys.path.insert(0, str(backend_path))
+if str(backend_path) not in sys.path:
+    sys.path.insert(0, str(backend_path))
 
-from channels.registry import get_registry
-
+# This function would be used if telegram_client.py ran standalone
+# But since it's imported by telegram_integration.py, we don't need this import here
+# The registry will be accessed through telegram_integration.py instead
 
 async def signal_parser_handler(channel_id: int):
     """
