@@ -10,6 +10,7 @@ from loguru import logger
 
 from ...database import DatabaseManager, Account
 from ...core.tradelocker_client import TradeLockerClient
+from ...core.account_manager import get_account_manager
 from ..main import get_db
 
 
@@ -255,6 +256,19 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
                 detail="Failed to create account (may already exist)"
             )
         
+        # Add credential to AccountManager if not already added
+        account_manager = get_account_manager()
+        if not account_manager.get_client(account_data.credential_key):
+            try:
+                await account_manager.add_credential(
+                    email=account_data.tl_email,
+                    password=account_data.tl_password,
+                    server=account_data.tl_server
+                )
+                logger.info(f"✓ Added credential to AccountManager: {account_data.credential_key}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to add credential to AccountManager: {e}")
+        
         # Sync channel subscriptions
         await db.sync_channel_subscriptions()
         
@@ -360,6 +374,19 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                 if add_success:
                     logger.info(f"  ✓ Added account: {account_key} (${balance:,.2f})")
                     added.append(account_key)
+                    
+                    # Add credential to AccountManager if not already added
+                    account_manager = get_account_manager()
+                    if not account_manager.get_client(request.email):
+                        try:
+                            await account_manager.add_credential(
+                                email=request.email,
+                                password=request.password,
+                                server=request.server
+                            )
+                            logger.info(f"  ✓ Added credential to AccountManager: {request.email}")
+                        except Exception as e:
+                            logger.warning(f"  ⚠️ Failed to add credential to AccountManager: {e}")
                 else:
                     logger.warning(f"  ✗ Failed to add account: {account_key}")
                     failed.append(account_key)

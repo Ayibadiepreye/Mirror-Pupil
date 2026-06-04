@@ -65,6 +65,37 @@ async def lifespan(app: FastAPI):
     await db.connect()
     logger.info("✓ Database connected")
     
+    # Load accounts from database into AccountManager
+    account_manager = get_account_manager()
+    all_accounts = await db.get_all_accounts()
+    credentials_added = set()
+    
+    for account in all_accounts:
+        credential_key = account.credential_key
+        
+        # Skip if we already added this credential
+        if credential_key in credentials_added:
+            continue
+        
+        try:
+            # Add credential to AccountManager
+            success = await account_manager.add_credential(
+                email=account.tl_email,
+                password=account.tl_password,
+                server=account.tl_server
+            )
+            
+            if success:
+                credentials_added.add(credential_key)
+                logger.info(f"✓ Loaded credential: {credential_key}")
+            else:
+                logger.error(f"✗ Failed to load credential: {credential_key}")
+                
+        except Exception as e:
+            logger.error(f"✗ Error loading credential {credential_key}: {e}")
+    
+    logger.info(f"✓ Loaded {len(credentials_added)} credential(s) into AccountManager")
+    
     # Initialize trade executor
     trade_executor = TradeExecutor(db, dry_run=False)
     await trade_executor.initialize()
