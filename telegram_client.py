@@ -368,9 +368,9 @@ class HumanLikeTelegramClient:
             
             me = await self.client.getMe()
             if me:
-                logger.info(f"✓ Connected as: {me.first_name} {me.last_name or ''} (@{me.username or 'no_username'})")
-                logger.info(f"  Phone: {me.phone_number}")
-                logger.info(f"  User ID: {me.id}")
+                logger.info(f"✓ Connected as: {me.first_name} {me.last_name or ''} (@{getattr(me, 'username', 'no_username')})")
+                logger.info(f"  Phone: {getattr(me, 'phone_number', 'N/A')}")
+                logger.info(f"  User ID: {getattr(me, 'id', 'N/A')}")
                 self.is_running = True
                 self.last_activity = time.time()
                 self.reconnect_count = 0
