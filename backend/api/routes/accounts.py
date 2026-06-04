@@ -95,6 +95,15 @@ class AccountResponse(BaseModel):
     risk_profile_id: Optional[int]
     max_concurrent_trades_override: Optional[int]
     
+    @classmethod
+    def from_account(cls, account: Account):
+        """Convert Account model to AccountResponse with date serialization."""
+        data = account.model_dump()
+        # Convert date to string if present
+        if data.get('cycle_start_date') is not None:
+            data['cycle_start_date'] = data['cycle_start_date'].isoformat()
+        return cls(**data)
+    
     class Config:
         from_attributes = True
 
@@ -109,7 +118,7 @@ async def get_all_accounts(db: DatabaseManager = Depends(get_db)):
     """
     try:
         accounts = await db.get_all_accounts()
-        return [AccountResponse.model_validate(acc) for acc in accounts]
+        return [AccountResponse.from_account(acc) for acc in accounts]
     except Exception as e:
         logger.error(f"Failed to get accounts: {e}")
         raise HTTPException(
@@ -136,7 +145,7 @@ async def get_account(account_key: str, db: DatabaseManager = Depends(get_db)):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Account not found: {account_key}"
             )
-        return AccountResponse.model_validate(account)
+        return AccountResponse.from_account(account)
     except HTTPException:
         raise
     except Exception as e:
@@ -184,8 +193,8 @@ async def discover_accounts(request: DiscoverAccountsRequest):
         discovered = []
         for acct in accounts:
             account_id = str(acct.get('id') or acct.get('accountId'))
-            account_number = acct.get('accountNumber') or acct.get('number') or account_id
-            balance = float(acct.get('balance', 0.0))
+            account_number = str(acct.get('accNum', account_id))
+            balance = float(acct.get('accountBalance', 0.0))
             
             discovered.append(DiscoveredAccount(
                 id=account_id,
@@ -250,7 +259,7 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
         await db.sync_channel_subscriptions()
         
         logger.info(f"✓ Created account: {account_key}")
-        return AccountResponse.model_validate(account)
+        return AccountResponse.from_account(account)
         
     except HTTPException:
         raise
@@ -325,8 +334,8 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                     continue
                 
                 tl_account = accounts_map[account_id]
-                account_number = tl_account.get('accountNumber') or tl_account.get('number') or account_id
-                balance = float(tl_account.get('balance', 0.0))
+                account_number = str(tl_account.get('accNum', account_id))
+                balance = float(tl_account.get('accountBalance', 0.0))
                 
                 # Create Account object
                 account = Account(
@@ -425,7 +434,7 @@ async def update_account(
         # Get updated account
         updated_account = await db.get_account(account_key)
         logger.info(f"✓ Updated account: {account_key}")
-        return AccountResponse.model_validate(updated_account)
+        return AccountResponse.from_account(updated_account)
         
     except HTTPException:
         raise
@@ -495,7 +504,7 @@ async def pause_account(account_key: str, db: DatabaseManager = Depends(get_db))
         
         account = await db.get_account(account_key)
         logger.info(f"✓ Paused account: {account_key}")
-        return AccountResponse.model_validate(account)
+        return AccountResponse.from_account(account)
         
     except HTTPException:
         raise
@@ -528,7 +537,7 @@ async def resume_account(account_key: str, db: DatabaseManager = Depends(get_db)
         
         account = await db.get_account(account_key)
         logger.info(f"✓ Resumed account: {account_key}")
-        return AccountResponse.model_validate(account)
+        return AccountResponse.from_account(account)
         
     except HTTPException:
         raise
@@ -587,7 +596,7 @@ async def reset_payout(
             f"✓ Reset payout for {account_key}: "
             f"new balance ${reset_data.new_balance:.2f}"
         )
-        return AccountResponse.model_validate(updated_account)
+        return AccountResponse.from_account(updated_account)
         
     except HTTPException:
         raise

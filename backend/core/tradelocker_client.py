@@ -24,6 +24,14 @@ from tradelocker import TLAPI
 import pandas as pd
 
 
+async def _to_thread_with_timeout(func, *args, timeout: float = 10.0, **kwargs):
+    """Run a sync function in asyncio's thread pool with a hard timeout."""
+    return await asyncio.wait_for(
+        asyncio.to_thread(func, *args, **kwargs),
+        timeout=timeout
+    )
+
+
 class CircuitState(Enum):
     """Circuit breaker states"""
     CLOSED = "closed"      # Normal operation
@@ -201,10 +209,16 @@ class TradeLockerClient:
         """
         Retry a function call with exponential backoff.
         3 attempts: 1s → 2s → 4s delays.
+        
+        Note: TLAPI methods are synchronous, so we run them in a thread pool
+        to avoid blocking the event loop.
         """
         for attempt in range(self.retry_attempts):
             try:
-                result = await func(*args, **kwargs)
+                # ✅ Run sync TLAPI method in thread pool
+                result = await _to_thread_with_timeout(
+                    func, *args, timeout=10.0, **kwargs
+                )
                 self._record_success()
                 return result
             except Exception as e:
