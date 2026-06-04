@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 from ...database import DatabaseManager, Account
+from ...core.tradelocker_client import TradeLockerClient
 from ..main import get_db
 
 
@@ -34,6 +35,40 @@ class AccountUpdate(BaseModel):
     paused: Optional[bool] = None
     risk_profile_id: Optional[int] = None
     max_concurrent_trades_override: Optional[int] = None
+
+
+class DiscoverAccountsRequest(BaseModel):
+    """Request model for discovering TradeLocker accounts."""
+    email: str
+    password: str
+    server: str = "live"
+
+
+class DiscoveredAccount(BaseModel):
+    """Model for a discovered account (not yet added to database)."""
+    id: str
+    number: str
+    balance: float
+
+
+class DiscoverAccountsResponse(BaseModel):
+    """Response model for account discovery."""
+    accounts: List[DiscoveredAccount]
+
+
+class BulkAddAccountsRequest(BaseModel):
+    """Request model for bulk adding accounts."""
+    email: str
+    password: str
+    server: str = "live"
+    account_ids: List[str]
+
+
+class BulkAddAccountsResponse(BaseModel):
+    """Response model for bulk add operation."""
+    added: List[str]
+    skipped: List[str]  # Already exist
+    failed: List[str]
 
 
 class AccountResponse(BaseModel):
@@ -110,6 +145,64 @@ async def get_account(account_key: str, db: DatabaseManager = Depends(get_db)):
         )
 
 
+@router.post("/discover", response_model=DiscoverAccountsResponse)
+async def discover_accounts(request: DiscoverAccountsRequest):
+    """
+    Discover TradeLocker accounts for given credentials without adding them to database.
+    
+    Args:
+        request: Credentials (email, password, server)
+    
+    Returns:
+        List of discovered accounts with IDs and balances
+    """
+    try:
+        logger.info(f"Discovering accounts for {request.email} on {request.server}")
+        
+        # Create temporary client
+        client = TradeLockerClient(
+            email=request.email,
+            password=request.password,
+            server=request.server
+        )
+        
+        # Authenticate
+        success = await client.authenticate()
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid TradeLocker credentials"
+            )
+        
+        # Get all accounts
+        accounts = await client.get_all_accounts()
+        
+        # Format response
+        discovered = []
+        for acct in accounts:
+            account_id = str(acct.get('id') or acct.get('accountId'))
+            account_number = acct.get('accountNumber') or acct.get('number') or account_id
+            balance = float(acct.get('balance', 0.0))
+            
+            discovered.append(DiscoveredAccount(
+                id=account_id,
+                number=account_number,
+                balance=balance
+            ))
+        
+        logger.info(f"✓ Discovered {len(discovered)} account(s) for {request.email}")
+        return DiscoverAccountsResponse(accounts=discovered)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to discover accounts: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to discover accounts: {str(e)}"
+        )
+
+
 @router.post("/", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_account(account_data: AccountCreate, db: DatabaseManager = Depends(get_db)):
     """
@@ -163,6 +256,126 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create account: {str(e)}"
+        )
+
+
+@router.post("/bulk-add", response_model=BulkAddAccountsResponse, status_code=status.HTTP_201_CREATED)
+async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager = Depends(get_db)):
+    """
+    Add multiple TradeLocker accounts at once.
+    Only adds NEW accounts - skips existing ones without modifying them.
+    
+    Args:
+        request: Credentials and list of account IDs to add
+    
+    Returns:
+        Lists of added, skipped (already exist), and failed accounts
+    """
+    try:
+        logger.info(f"Bulk adding {len(request.account_ids)} account(s) for {request.email}")
+        
+        # Create temporary client to fetch account details
+        client = TradeLockerClient(
+            email=request.email,
+            password=request.password,
+            server=request.server
+        )
+        
+        # Authenticate
+        success = await client.authenticate()
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid TradeLocker credentials"
+            )
+        
+        # Get all accounts from TradeLocker
+        all_accounts = await client.get_all_accounts()
+        
+        # Map account IDs to full account data
+        accounts_map = {}
+        for acct in all_accounts:
+            account_id = str(acct.get('id') or acct.get('accountId'))
+            accounts_map[account_id] = acct
+        
+        added = []
+        skipped = []
+        failed = []
+        
+        # Process each requested account
+        for account_id in request.account_ids:
+            account_key = f"{request.email}:{account_id}"
+            
+            try:
+                # Check if account already exists
+                existing = await db.get_account(account_key)
+                if existing:
+                    logger.info(f"  ⊘ Skipping existing account: {account_key}")
+                    skipped.append(account_key)
+                    continue
+                
+                # Get account details from TradeLocker
+                if account_id not in accounts_map:
+                    logger.warning(f"  ✗ Account ID not found in TradeLocker: {account_id}")
+                    failed.append(account_key)
+                    continue
+                
+                tl_account = accounts_map[account_id]
+                account_number = tl_account.get('accountNumber') or tl_account.get('number') or account_id
+                balance = float(tl_account.get('balance', 0.0))
+                
+                # Create Account object
+                account = Account(
+                    account_key=account_key,
+                    credential_key=request.email,
+                    tl_account_id=account_id,
+                    tl_email=request.email,
+                    tl_password=request.password,
+                    tl_server=request.server,
+                    display_name=f"{account_number}",
+                    initial_balance=balance,
+                    current_balance=balance,
+                    highest_banked_balance=balance,
+                    daily_start_balance=balance,
+                    last_synced_balance=balance,
+                    risk_profile_id=None  # Use default
+                )
+                
+                # Add to database
+                add_success = await db.add_account(account)
+                if add_success:
+                    logger.info(f"  ✓ Added account: {account_key} (${balance:,.2f})")
+                    added.append(account_key)
+                else:
+                    logger.warning(f"  ✗ Failed to add account: {account_key}")
+                    failed.append(account_key)
+                    
+            except Exception as e:
+                logger.error(f"  ✗ Error adding account {account_key}: {e}")
+                failed.append(account_key)
+        
+        # Sync channel subscriptions for all new accounts
+        if added:
+            await db.sync_channel_subscriptions()
+        
+        logger.info(
+            f"✓ Bulk add complete: {len(added)} added, "
+            f"{len(skipped)} skipped, {len(failed)} failed"
+        )
+        
+        return BulkAddAccountsResponse(
+            added=added,
+            skipped=skipped,
+            failed=failed
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to bulk add accounts: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bulk add accounts: {str(e)}"
         )
 
 

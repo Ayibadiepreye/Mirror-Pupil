@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Home, Users, TrendingUp, Settings, Power, Bell } from 'lucide-react'
+import { Home, Users, TrendingUp, Settings, Power, Bell, History } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 
@@ -22,7 +22,8 @@ export default function Layout() {
   const navItems = [
     { path: '/', icon: Home, label: 'Dashboard' },
     { path: '/accounts', icon: Users, label: 'Accounts' },
-    { path: '/trades', icon: TrendingUp, label: 'Trades' },
+    { path: '/trades', icon: TrendingUp, label: 'Active' },
+    { path: '/history', icon: History, label: 'History' },
     { path: '/bot-control', icon: Power, label: 'Bot' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ]
