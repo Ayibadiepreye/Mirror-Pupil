@@ -3,7 +3,7 @@
 # ============================================
 
 # Telegram Client (TDLib-based)
-pytdbot==0.8.5
+pytdbot[tdjson]==0.9.10  # Includes TDLib precompiled binaries
 
 # TradeLocker SDK
 tradelocker==0.56.2

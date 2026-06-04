@@ -82,49 +82,27 @@ class HumanLikeTelegramClient:
         Prevents crashes from unexpected Telegram updates.
         """
         try:
-            # Patch 1: dict_to_obj in obj_encoder
-            from pytdbot.types import obj_encoder
-            original_dict_to_obj = obj_encoder.dict_to_obj
+            # Patch: Client._handle_update to catch exceptions from unknown update types
+            from pytdbot import Client as PytdbotClient
             
-            def patched_dict_to_obj(data: dict):
-                try:
-                    return original_dict_to_obj(data)
-                except Exception as e:
-                    logger.warning(f"Unknown update type in obj_encoder: {data.get('@type')} - {e}")
-                    return None
-            
-            obj_encoder.dict_to_obj = patched_dict_to_obj
-            
-            # Patch 2: dict_to_obj in pytdbot_utils
-            from pytdbot import utils as pytdbot_utils
-            if hasattr(pytdbot_utils, 'dict_to_obj'):
-                original_utils_dict_to_obj = pytdbot_utils.dict_to_obj
+            # Check if _handle_update method exists
+            if hasattr(PytdbotClient, '_handle_update'):
+                original_handle_update = PytdbotClient._handle_update
                 
-                def patched_utils_dict_to_obj(data: dict):
+                async def patched_handle_update(self, update):
                     try:
-                        return original_utils_dict_to_obj(data)
+                        return await original_handle_update(self, update)
                     except Exception as e:
-                        logger.warning(f"Unknown update type in pytdbot_utils: {data.get('@type')} - {e}")
+                        logger.warning(f"Unknown update type or error in _handle_update: {update.get('@type') if isinstance(update, dict) else 'N/A'} - {e}")
                         return None
                 
-                pytdbot_utils.dict_to_obj = patched_utils_dict_to_obj
-            
-            # Patch 3: Client.process_update to skip None updates
-            from pytdbot import Client as PytdbotClient
-            original_process_update = PytdbotClient.process_update
-            
-            async def patched_process_update(self, update):
-                if update is None:
-                    logger.debug("Skipping None update")
-                    return
-                return await original_process_update(self, update)
-            
-            PytdbotClient.process_update = patched_process_update
-            
-            logger.info("✓ Applied Pytdbot monkey patches successfully")
+                PytdbotClient._handle_update = patched_handle_update
+                logger.info("✓ Applied Pytdbot monkey patch for _handle_update")
+            else:
+                logger.debug("_handle_update method not found, skipping patch")
             
         except Exception as e:
-            logger.error(f"Failed to apply Pytdbot patches: {e}")
+            logger.debug(f"Pytdbot patches not applied (may not be needed): {e}")
     
     async def _human_delay(self):
         """Add random human-like delay between actions."""
