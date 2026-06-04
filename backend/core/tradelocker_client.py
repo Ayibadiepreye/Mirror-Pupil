@@ -88,10 +88,13 @@ class TradeLockerClient:
         self.token_expires_at: Optional[datetime] = None
         
         # Base URL - constructed from environment (live/demo), NOT server (prop firm name)
+        # Store both: base_url for our auth, environment_url for TLAPI SDK
         if environment == "demo":
-            self.base_url = "https://demo.tradelocker.com/backend-api"
+            self.environment_url = "https://demo.tradelocker.com"
+            self.base_url = f"{self.environment_url}/backend-api"
         else:  # live
-            self.base_url = "https://live.tradelocker.com/backend-api"
+            self.environment_url = "https://live.tradelocker.com"
+            self.base_url = f"{self.environment_url}/backend-api"
         
         logger.info(
             f"Initialized TradeLockerClient for {email} on {server} ({environment}) "
@@ -170,9 +173,9 @@ class TradeLockerClient:
                         self.token_expires_at = datetime.now() + timedelta(hours=23)
                         
                         # Initialize TLAPI client with token
-                        # Use environment (live/demo) not server (prop firm name)
+                        # Use full environment URL (e.g., "https://demo.tradelocker.com")
                         self.client = TLAPI(
-                            environment=self.environment,
+                            environment=self.environment_url,
                             access_token=self.access_token,
                             refresh_token=self.refresh_token
                         )
