@@ -114,6 +114,24 @@ class DatabaseManager:
             # Execute schema DDL
             await conn.execute(SCHEMA_DDL)
             
+            # Migration: Add tl_prop_firm column if it doesn't exist
+            try:
+                column_exists = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='accounts' 
+                    AND column_name='tl_prop_firm'
+                """)
+                
+                if not column_exists:
+                    await conn.execute("""
+                        ALTER TABLE accounts 
+                        ADD COLUMN tl_prop_firm TEXT NOT NULL DEFAULT ''
+                    """)
+                    logger.info("✓ Added tl_prop_firm column to accounts table")
+            except Exception as e:
+                logger.debug(f"Migration check: {e}")
+            
             # Insert initial data
             await conn.execute(INITIAL_DATA)
             

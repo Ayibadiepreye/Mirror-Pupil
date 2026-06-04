@@ -41,7 +41,8 @@ class DiscoverAccountsRequest(BaseModel):
     """Request model for discovering TradeLocker accounts."""
     email: str
     password: str
-    server: str = "live"
+    server: str  # Environment: "live" or "demo"
+    prop_firm: str = ""  # Broker/Prop firm name (e.g., "Blue Guardian")
 
 
 class DiscoveredAccount(BaseModel):
@@ -60,7 +61,8 @@ class BulkAddAccountsRequest(BaseModel):
     """Request model for bulk adding accounts."""
     email: str
     password: str
-    server: str = "live"
+    server: str  # Environment: "live" or "demo"
+    prop_firm: str = ""  # Broker/Prop firm name
     account_ids: List[str]
 
 
@@ -157,13 +159,14 @@ async def discover_accounts(request: DiscoverAccountsRequest):
         List of discovered accounts with IDs and balances
     """
     try:
-        logger.info(f"Discovering accounts for {request.email} on {request.server}")
+        logger.info(f"Discovering accounts for {request.email} on {request.prop_firm or 'default'} ({request.server})")
         
         # Create temporary client
         client = TradeLockerClient(
             email=request.email,
             password=request.password,
-            server=request.server
+            server=request.prop_firm,  # Broker/prop firm name
+            environment=request.server  # "live" or "demo"
         )
         
         # Authenticate
@@ -272,13 +275,14 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
         Lists of added, skipped (already exist), and failed accounts
     """
     try:
-        logger.info(f"Bulk adding {len(request.account_ids)} account(s) for {request.email}")
+        logger.info(f"Bulk adding {len(request.account_ids)} account(s) for {request.email} on {request.prop_firm or 'default'} ({request.server})")
         
         # Create temporary client to fetch account details
         client = TradeLockerClient(
             email=request.email,
             password=request.password,
-            server=request.server
+            server=request.prop_firm,  # Broker/prop firm name
+            environment=request.server  # "live" or "demo"
         )
         
         # Authenticate
@@ -331,7 +335,8 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                     tl_account_id=account_id,
                     tl_email=request.email,
                     tl_password=request.password,
-                    tl_server=request.server,
+                    tl_server=request.server,  # Environment: live/demo
+                    tl_prop_firm=request.prop_firm,  # Broker/prop firm name
                     display_name=f"{account_number}",
                     initial_balance=balance,
                     current_balance=balance,

@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     tl_account_id TEXT NOT NULL,
     tl_email TEXT NOT NULL,
     tl_password TEXT NOT NULL,  -- Encrypted
-    tl_server TEXT NOT NULL DEFAULT 'live',
+    tl_server TEXT NOT NULL DEFAULT 'live',  -- Environment: "live" or "demo"
+    tl_prop_firm TEXT NOT NULL DEFAULT '',  -- Broker/Prop firm name (e.g., "Blue Guardian")
     display_name TEXT,
     initial_balance REAL,
     current_balance REAL,

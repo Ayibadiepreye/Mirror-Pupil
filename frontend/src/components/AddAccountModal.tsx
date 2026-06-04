@@ -17,6 +17,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [server, setServer] = useState<'live' | 'demo'>('demo')
+  const [propFirm, setPropFirm] = useState('')  // NEW: Broker/prop firm name
   
   // Discovered accounts
   const [discoveredAccounts, setDiscoveredAccounts] = useState<any[]>([])
@@ -34,7 +35,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
     setError('')
     
     try {
-      const response = await api.discoverAccounts({ email, password, server })
+      const response = await api.discoverAccounts({ email, password, server, prop_firm: propFirm })
       setDiscoveredAccounts(response.accounts || [])
       setStep('discover')
     } catch (err: any) {
@@ -58,6 +59,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
         email,
         password,
         server,
+        prop_firm: propFirm,
         account_ids: Array.from(selectedAccounts)
       })
       
@@ -75,6 +77,7 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
     setEmail('')
     setPassword('')
     setServer('demo')
+    setPropFirm('')
     setDiscoveredAccounts([])
     setSelectedAccounts(new Set())
     setError('')
@@ -146,6 +149,22 @@ export default function AddAccountModal({ isOpen, onClose, onSuccess }: AddAccou
                   <option value="demo">Demo</option>
                   <option value="live">Live</option>
                 </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm text-kob-text-dim mb-1">
+                  Broker/Prop Firm (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={propFirm}
+                  onChange={(e) => setPropFirm(e.target.value)}
+                  className="w-full bg-kob-app border border-kob-border rounded px-3 py-2 text-kob-text"
+                  placeholder="e.g., Blue Guardian, FTMO, Pepperstone"
+                />
+                <p className="text-xs text-kob-text-dim mt-1">
+                  Leave empty if your broker doesn't require a server name
+                </p>
               </div>
             </>
           )}

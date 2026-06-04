@@ -42,7 +42,8 @@ class TradeLockerClient:
         self,
         email: str,
         password: str,
-        server: str = "live",  # "live" or "demo"
+        server: str,  # Prop firm server name (e.g., "Blue Guardian")
+        environment: str = "live",  # "live" or "demo" - for URL construction
         max_rps: int = 5,
         circuit_failure_threshold: int = 3,
         circuit_timeout: int = 120,
@@ -51,7 +52,8 @@ class TradeLockerClient:
     ):
         self.email = email
         self.password = password
-        self.server = server
+        self.server = server  # Prop firm name for auth payload
+        self.environment = environment  # live/demo for URL
         self.credential_key = email
         
         # Rate limiting
@@ -85,11 +87,14 @@ class TradeLockerClient:
         self.refresh_token: Optional[str] = None
         self.token_expires_at: Optional[datetime] = None
         
-        # Base URL
-        self.base_url = f"https://{server}.tradelocker.com/backend-api"
+        # Base URL - constructed from environment (live/demo), NOT server (prop firm name)
+        if environment == "demo":
+            self.base_url = "https://demo.tradelocker.com/backend-api"
+        else:  # live
+            self.base_url = "https://live.tradelocker.com/backend-api"
         
         logger.info(
-            f"Initialized TradeLockerClient for {email} on {server} "
+            f"Initialized TradeLockerClient for {email} on {server} ({environment}) "
             f"(rate: {max_rps} req/s, circuit: {circuit_failure_threshold} failures)"
         )
     
@@ -164,8 +169,9 @@ class TradeLockerClient:
                         self.token_expires_at = datetime.now() + timedelta(hours=23)
                         
                         # Initialize TLAPI client with token
+                        # Use environment (live/demo) not server (prop firm name)
                         self.client = TLAPI(
-                            environment=self.server,
+                            environment=self.environment,
                             access_token=self.access_token,
                             refresh_token=self.refresh_token
                         )

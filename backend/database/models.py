@@ -49,7 +49,8 @@ class Account(BaseModel):
     tl_account_id: str
     tl_email: str
     tl_password: str  # Should be encrypted
-    tl_server: str = "live"
+    tl_server: str = "live"  # Environment: "live" or "demo"
+    tl_prop_firm: str = ""  # Broker/Prop firm name (e.g., "Blue Guardian")
     display_name: Optional[str] = None
     initial_balance: Optional[float] = None
     current_balance: Optional[float] = None
