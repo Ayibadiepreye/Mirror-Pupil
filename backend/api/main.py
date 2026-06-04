@@ -20,6 +20,7 @@ from ..risk.eod_close import get_eod_close_handler
 from ..risk.daily_reset import get_daily_reset_handler
 from ..core.account_manager import get_account_manager
 from ..core.trade_executor import TradeExecutor
+from ..core.health_monitor import get_health_monitor
 from ..channels.billirichy.autonomous import get_billirichy_autonomous_manager
 from ..channels.firepips.autonomous import get_firepips_autonomous_manager
 from ..core.balance_reconciliation import get_balance_monitor
@@ -134,6 +135,11 @@ async def lifespan(app: FastAPI):
     await pending_monitor.start_monitoring()
     logger.info("✓ Pending order monitor started")
     
+    # Initialize health monitor (credential validation every 60 minutes)
+    health_monitor = get_health_monitor(account_manager)
+    await health_monitor.start_monitoring()
+    logger.info("✓ Health monitor started (checks every 60 minutes)")
+    
     # Initialize EOD close handler (closes all trades at 4:45 PM EST)
     eod_handler = await get_eod_close_handler(db)
     logger.info("✓ EOD close handler started (4:45 PM EST)")
@@ -161,6 +167,7 @@ async def lifespan(app: FastAPI):
     await telegram.stop()
     
     # Stop all background tasks
+    await health_monitor.stop_monitoring()
     await eod_handler.stop_eod_close_scheduler()
     await reset_handler.stop_daily_reset_scheduler()
     await billirichy_manager.stop_managing()

@@ -94,6 +94,7 @@ class TradeLockerClient:
         self.access_token: Optional[str] = None
         self.refresh_token: Optional[str] = None
         self.token_expires_at: Optional[datetime] = None
+        self.last_auth_time: Optional[datetime] = None
         
         # Base URL - constructed from environment (live/demo), NOT server (prop firm name)
         # Store both: base_url for our auth, environment_url for TLAPI SDK
@@ -152,6 +153,38 @@ class TradeLockerClient:
             self.circuit_state = CircuitState.OPEN
             self.circuit_opened_at = datetime.now()
     
+    async def _ensure_authenticated(self):
+        """
+        Check token age and refresh if needed BEFORE every API call.
+        Prevents 401 errors by proactively refreshing tokens.
+        """
+        if not self.access_token or not self.token_expires_at:
+            await self.authenticate()
+            return
+        
+        # Refresh if token will expire in next 10 minutes (safety margin)
+        time_until_expiry = (self.token_expires_at - datetime.now()).total_seconds()
+        if time_until_expiry < 600:  # 10 minutes
+            logger.info(f"[{self.credential_key}] Token expiring soon, refreshing...")
+            await self.authenticate()
+    
+    async def _with_auth_retry(self, func):
+        """
+        Wrap API calls with automatic 401 error recovery.
+        Catches authentication errors, re-authenticates, and retries once.
+        """
+        try:
+            return await func()
+        except Exception as e:
+            error_str = str(e).lower()
+            # Detect 401/auth errors
+            if "unauthorized" in error_str or "401" in error_str or "authentication" in error_str:
+                logger.warning(f"[{self.credential_key}] Auth error detected, re-authenticating...")
+                await self.authenticate()
+                # Retry the original operation once
+                return await func()
+            raise  # Re-raise if not auth error
+    
     async def authenticate(self):
         """
         Authenticate with TradeLocker.
@@ -179,6 +212,7 @@ class TradeLockerClient:
                         
                         # Token expires in 24 hours, refresh at 23 hours
                         self.token_expires_at = datetime.now() + timedelta(hours=23)
+                        self.last_auth_time = datetime.now()
                         
                         # Initialize TLAPI client with token
                         # Use full environment URL (e.g., "https://demo.tradelocker.com")
@@ -239,21 +273,28 @@ class TradeLockerClient:
     async def _call_api(self, method_name: str, *args, **kwargs):
         """
         Call TLAPI method with rate limiting, circuit breaker, and retry logic.
+        Now includes proactive token refresh and 401 auto-recovery.
         """
-        # Check circuit breaker
+        # 1. Check token age and refresh if needed (proactive)
+        await self._ensure_authenticated()
+        
+        # 2. Check circuit breaker
         self._check_circuit()
         
-        # Rate limit
+        # 3. Rate limit
         await self._rate_limit()
         
-        # Get method
+        # 4. Get method
         if not self.client:
             raise Exception("Client not authenticated. Call authenticate() first.")
         
         method = getattr(self.client, method_name)
         
-        # Call with retry
-        return await self._retry_call(method, *args, **kwargs)
+        # 5. Call with retry AND auth recovery wrapper
+        async def api_call():
+            return await self._retry_call(method, *args, **kwargs)
+        
+        return await self._with_auth_retry(api_call)
     
     def _is_instrument_cache_valid(self) -> bool:
         """Check if instrument cache is still valid."""
@@ -607,13 +648,14 @@ class TradeLockerClient:
 # Token refresh background task
 async def token_refresh_loop(client: TradeLockerClient):
     """
-    Background task to refresh tokens every 23 hours.
+    Background task to refresh tokens every 50 minutes.
+    Updated from 23 hours to 50 minutes for better resilience.
     """
     while True:
-        await asyncio.sleep(23 * 3600)  # 23 hours
+        await asyncio.sleep(50 * 60)  # 50 minutes
         
         try:
-            logger.info(f"[{client.credential_key}] Refreshing token...")
+            logger.info(f"[{client.credential_key}] Refreshing token (scheduled)...")
             await client.authenticate()
             logger.info(f"[{client.credential_key}] ✓ Token refreshed")
         except Exception as e:
