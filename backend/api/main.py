@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize Telegram client integration
     telegram = get_telegram_integration()
-    telegram_started = await telegram.start()
+    telegram_started = await telegram.start(db)  # Pass database for channel loading
     if telegram_started:
         logger.info("✓ Telegram client integration started")
     else:

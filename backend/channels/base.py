@@ -438,3 +438,92 @@ class ChannelPlugin(ABC):
                 f"{bs.symbol} {bs.direction} (msg_id={bs.msg_id})"
             )
             del self._waiting_room[key]
+
+
+
+class DynamicChannelPlugin(ChannelPlugin):
+    """
+    Dynamically composed plugin that can mix entry and management logic modules.
+    Allows channels to reuse existing logic without creating new plugin classes.
+    """
+    
+    def __init__(
+        self,
+        channel_id: int,
+        display_name: str,
+        entry_module: str,
+        management_module: str,
+        signal_prefix: str
+    ):
+        super().__init__(channel_id, display_name)
+        self._signal_prefix = signal_prefix
+        
+        # Import entry logic components based on module
+        if entry_module == "billirichy.entry":
+            from .billirichy.entry import parse_entry_signal
+            from .billirichy.symbol_map import normalize_symbol
+            from .billirichy.context_matcher import BillirichyContextMatcher
+            
+            self._parse_entry_func = parse_entry_signal
+            self._normalize_symbol_func = normalize_symbol
+            self._context_matcher_class = BillirichyContextMatcher
+            
+        elif entry_module == "firepips.entry":
+            from .firepips.entry import parse_entry_signal
+            from .firepips.symbol_map import normalize_symbol
+            from .firepips.context_matcher import FirepipsContextMatcher
+            
+            self._parse_entry_func = parse_entry_signal
+            self._normalize_symbol_func = normalize_symbol
+            self._context_matcher_class = FirepipsContextMatcher
+        else:
+            raise ValueError(f"Unknown entry module: {entry_module}")
+        
+        # Import management logic based on module
+        if management_module == "billirichy.management":
+            from .billirichy.management import parse_management_action
+            self._parse_management_func = parse_management_action
+            
+        elif management_module == "firepips.management":
+            from .firepips.management import parse_management_action
+            self._parse_management_func = parse_management_action
+        else:
+            raise ValueError(f"Unknown management module: {management_module}")
+        
+        self._context_matcher = None
+    
+    @property
+    def signal_prefix(self) -> str:
+        return self._signal_prefix
+    
+    def normalize_symbol(self, raw: str) -> Optional[str]:
+        """Normalize symbol using configured entry module's symbol map."""
+        return self._normalize_symbol_func(raw)
+    
+    async def parse_entry(self, message, raw_text: str) -> Optional[ParsedSignal]:
+        """Parse entry signal using configured entry module."""
+        return await self._parse_entry_func(
+            message,
+            raw_text,
+            self.channel_id,
+            self._add_to_waiting_room
+        )
+    
+    async def parse_management(self, message, raw_text: str) -> Optional[ParsedManagement]:
+        """Parse management action using configured management module."""
+        return await self._parse_management_func(
+            message,
+            raw_text,
+            self.channel_id
+        )
+    
+    async def _validate_bare_signal_completion(self, bare_signal, new_signal, message):
+        """
+        Validate bare signal completion using configured context matcher.
+        """
+        if not self._context_matcher:
+            self._context_matcher = self._context_matcher_class(db=None, channel_id=self.channel_id)
+        
+        return await self._context_matcher.validate_bare_signal_completion(
+            bare_signal, new_signal, client=None
+        )

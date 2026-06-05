@@ -30,9 +30,12 @@ class TelegramIntegration:
         self.cleanup_task: Optional[asyncio.Task] = None
         self.is_running = False
     
-    async def start(self):
+    async def start(self, db):
         """
         Start the Telegram client and register channel handlers.
+        
+        Args:
+            db: DatabaseManager instance for loading channels
         """
         try:
             # Load config from environment
@@ -75,7 +78,10 @@ class TelegramIntegration:
             # Get channel registry
             registry = get_registry()
             
-            # Register handlers for each channel
+            # Initialize registry with database (loads channels dynamically)
+            await registry.initialize(db)
+            
+            # Register handlers for each loaded channel
             for channel_id in registry.get_channel_ids():
                 handler = self._create_handler(channel_id, registry)
                 self.client.register_channel_handler(channel_id, handler)
