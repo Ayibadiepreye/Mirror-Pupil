@@ -1310,7 +1310,7 @@ class ComprehensiveTradeLockerTest:
             
             if order_status:
                 status = order_status.get('status', '').lower()
-                if status in ['pending', 'working', 'accepted']:
+                if status in ['new', 'pending', 'working', 'accepted']:  # TradeLocker uses 'new'
                     self.results.add_test(
                         "Check Pending Order Status",
                         "PASS",

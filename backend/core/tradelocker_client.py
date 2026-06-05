@@ -538,11 +538,22 @@ class TradeLockerClient:
     ) -> Dict:
         """
         Close position (full or partial).
+        Wrapper that accepts quantity and converts to SDK's 'lots' parameter.
         
         Args:
             position_id: Position ID
-            quantity: Lot size to close (None = close all)
+            quantity: Lot size to close (None = close all, X = close X lots)
+        
+        SDK Translation:
+            quantity=None → lots=0 (full close)
+            quantity=X → lots=X (partial close of X lots)
+        
+        Note: Partial close calculation (percentage to lots) is done by caller.
         """
+        # Convert quantity to SDK's 'lots' parameter
+        # SDK expects: lots=0 for full close, lots=X for partial close
+        lots = 0 if quantity is None else quantity
+        
         if quantity:
             logger.info(
                 f"[{self.credential_key}] Closing {quantity} lots of position {position_id}"
@@ -553,7 +564,7 @@ class TradeLockerClient:
         result = await self._call_api(
             "close_position",
             position_id=position_id,
-            qty=quantity
+            lots=lots
         )
         
         logger.info(f"[{self.credential_key}] ✓ Position closed")

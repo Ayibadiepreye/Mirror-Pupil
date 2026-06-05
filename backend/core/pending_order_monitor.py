@@ -143,7 +143,7 @@ class PendingOrderMonitor:
             elif status in ['cancelled', 'rejected', 'expired']:
                 await self._handle_order_cancelled(trade, status)
             
-            elif status == 'pending':
+            elif status in ['new', 'pending']:  # TradeLocker uses 'new' for active pending orders
                 # Still pending, no action needed
                 pass
             

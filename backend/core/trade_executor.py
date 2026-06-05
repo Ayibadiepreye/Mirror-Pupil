@@ -369,7 +369,7 @@ class TradeExecutor:
                 order_id = order
                 position_id = None  # Will need to fetch from positions if needed
                 fill_price = signal.entry_price or 0.0
-                order_status = 'filled' if type_ == 'market' else 'pending'
+                order_status = 'filled' if type_ == 'market' else 'new'  # TradeLocker uses 'new' for pending orders
             else:
                 # SDK returned dict with full details
                 order_id = order.get('id') or order.get('orderId')
@@ -461,7 +461,7 @@ class TradeExecutor:
                     logger.info(
                         f"[{account_key}] ✅ Trade recorded in database: trade_id={trade_id} (FILLED)"
                     )
-                elif status == "pending":
+                elif status in ["new", "pending"]:  # TradeLocker uses 'new' for pending orders
                     logger.info(
                         f"[{account_key}] ✅ Pending order recorded in database: trade_id={trade_id} "
                         f"(will be monitored until filled or expired)"
@@ -901,7 +901,7 @@ class TradeExecutor:
             
             # CANCEL_PENDING
             elif action == 'CANCEL_PENDING':
-                if trade.status == 'pending':
+                if trade.status in ['new', 'pending']:  # TradeLocker uses 'new' for pending orders
                     await client.delete_order(order_id=trade.tl_order_id)
                     await self.db.remove_active_trade(trade.trade_id)
                     logger.info(

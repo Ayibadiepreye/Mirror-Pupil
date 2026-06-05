@@ -145,7 +145,7 @@ class EODCloseHandler:
                     continue
                 
                 # Handle pending orders differently from filled positions
-                if trade.status == 'pending':
+                if trade.status in ['new', 'pending']:  # TradeLocker uses 'new' for pending orders
                     # Cancel the pending order
                     try:
                         await tl_client.cancel_order(trade.tl_order_id)
