@@ -83,7 +83,8 @@ async def lifespan(app: FastAPI):
             success = await account_manager.add_credential(
                 email=account.tl_email,
                 password=account.tl_password,
-                server=account.tl_server
+                server=account.tl_prop_firm,      # Prop firm name (e.g., "HEROFX")
+                environment=account.tl_server     # "live" or "demo"
             )
             
             if success:

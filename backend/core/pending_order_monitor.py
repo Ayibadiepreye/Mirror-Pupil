@@ -130,8 +130,8 @@ class PendingOrderMonitor:
                 return
             
             status = order_status.get('status', '').lower()
-            filled_qty = order_status.get('filledQuantity', 0)
-            fill_price = order_status.get('fillPrice') or order_status.get('avgPrice')
+            filled_qty = order_status.get('filledQty', 0)
+            fill_price = order_status.get('avgPrice') or order_status.get('fillPrice')
             
             # Handle different statuses
             if status == 'filled':

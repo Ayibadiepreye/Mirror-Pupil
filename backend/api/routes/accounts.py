@@ -263,7 +263,8 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
                 await account_manager.add_credential(
                     email=account_data.tl_email,
                     password=account_data.tl_password,
-                    server=account_data.tl_server
+                    server=account_data.tl_prop_firm,    # Prop firm name (e.g., "HEROFX")
+                    environment=account_data.tl_server   # "live" or "demo"
                 )
                 logger.info(f"✓ Added credential to AccountManager: {account_data.credential_key}")
             except Exception as e:

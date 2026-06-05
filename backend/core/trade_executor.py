@@ -357,7 +357,7 @@ class TradeExecutor:
             )
             
             # Step 9: Extract order details
-            order_id = order.get('orderId') or order.get('id')
+            order_id = order.get('id') or order.get('orderId')
             position_id = order.get('positionId')
             fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
             order_status = order.get('status', '').lower()
