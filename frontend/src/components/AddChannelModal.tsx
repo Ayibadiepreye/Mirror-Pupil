@@ -15,8 +15,8 @@ export default function AddChannelModal({ isOpen, onClose, onSuccess }: AddChann
   const [channelId, setChannelId] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [signalPrefix, setSignalPrefix] = useState('')
-  const [entryLogic, setEntryLogic] = useState('channels.billirichy.plugin')
-  const [managementLogic, setManagementLogic] = useState('channels.billirichy.plugin')
+  const [entryLogic, setEntryLogic] = useState('billirichy.entry')
+  const [managementLogic, setManagementLogic] = useState('billirichy.management')
   const [priority, setPriority] = useState('10')
   
   if (!isOpen) return null
@@ -54,8 +54,8 @@ export default function AddChannelModal({ isOpen, onClose, onSuccess }: AddChann
     setChannelId('')
     setDisplayName('')
     setSignalPrefix('')
-    setEntryLogic('channels.billirichy.plugin')
-    setManagementLogic('channels.billirichy.plugin')
+    setEntryLogic('billirichy.entry')
+    setManagementLogic('billirichy.management')
     setPriority('10')
     setError('')
     onClose()
@@ -129,8 +129,8 @@ export default function AddChannelModal({ isOpen, onClose, onSuccess }: AddChann
               onChange={(e) => setEntryLogic(e.target.value)}
               className="w-full bg-kob-app border border-kob-border rounded px-3 py-2 text-kob-text"
             >
-              <option value="channels.billirichy.plugin">BillirichyFX Logic</option>
-              <option value="channels.firepips.plugin">Firepips Logic</option>
+              <option value="billirichy.entry">BillirichyFX Logic</option>
+              <option value="firepips.entry">Firepips Logic</option>
             </select>
           </div>
           
@@ -141,8 +141,8 @@ export default function AddChannelModal({ isOpen, onClose, onSuccess }: AddChann
               onChange={(e) => setManagementLogic(e.target.value)}
               className="w-full bg-kob-app border border-kob-border rounded px-3 py-2 text-kob-text"
             >
-              <option value="channels.billirichy.plugin">BillirichyFX Logic</option>
-              <option value="channels.firepips.plugin">Firepips Logic</option>
+              <option value="billirichy.management">BillirichyFX Logic</option>
+              <option value="firepips.management">Firepips Logic</option>
             </select>
           </div>
           
