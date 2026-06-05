@@ -473,6 +473,10 @@ class TradeLockerClient:
             f"{side.upper()} {quantity} lots of instrument {instrument_id}"
         )
         
+        # Position netting only supported for MARKET orders
+        if type_.lower() != "market":
+            position_netting = False
+        
         # Prepare SL/TP types (absolute prices)
         stop_loss_type = "absolute" if stop_loss else None
         take_profit_type = "absolute" if take_profit else None

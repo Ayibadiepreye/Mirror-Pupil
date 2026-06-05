@@ -363,10 +363,19 @@ class TradeExecutor:
             )
             
             # Step 9: Extract order details
-            order_id = order.get('id') or order.get('orderId')
-            position_id = order.get('positionId')
-            fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
-            order_status = order.get('status', '').lower()
+            # SDK may return int (order_id) or dict (full response)
+            if isinstance(order, int):
+                # SDK returned just the order_id
+                order_id = order
+                position_id = None  # Will need to fetch from positions if needed
+                fill_price = signal.entry_price or 0.0
+                order_status = 'filled' if type_ == 'market' else 'pending'
+            else:
+                # SDK returned dict with full details
+                order_id = order.get('id') or order.get('orderId')
+                position_id = order.get('positionId')
+                fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
+                order_status = order.get('status', '').lower()
             
             # Determine if order is filled or pending
             if type_ == "market":
