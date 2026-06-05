@@ -194,8 +194,10 @@ class AccountManager:
         try:
             # Client is dedicated to this account, no account_id needed
             state = await client.get_account_state()
-            balance = state.get('accountBalance') or state.get('balance', 0.0)
-            equity = state.get('accountEquity') or state.get('equity', 0.0)
+            balance = state.get('balance') or state.get('accountBalance', 0.0)
+            # Note: equity is NOT a field - calculate it from balance + openNetPnL
+            open_pnl = state.get('openNetPnL', 0.0) or state.get('openGrossPnL', 0.0)
+            equity = balance + open_pnl
             
             # Update stored balance
             account['current_balance'] = balance

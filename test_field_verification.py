@@ -17,13 +17,13 @@ async def verify_fixes(client: TradeLockerClient):
     print("="*60 + "\n")
     
     try:
-        # Test 1: unrealizedProfitLoss
+        # Test 1: unrealizedPl (correct field name)
         print("Test 1: Position P&L Field")
         print("-" * 40)
         positions = await client.get_all_positions()
         if positions:
-            pnl = positions[0].get('unrealizedProfitLoss')
-            print(f"✓ unrealizedProfitLoss: {pnl}")
+            pnl = positions[0].get('unrealizedPl')
+            print(f"✓ unrealizedPl: {pnl}")
             print(f"✓ Position fields present: {list(positions[0].keys())[:5]}...")
         else:
             print("⚠ No open positions to test")

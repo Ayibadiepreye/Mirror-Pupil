@@ -110,7 +110,7 @@ class BalanceReconciliationMonitor:
         try:
             # Poll actual balance (client is dedicated to this account)
             account_info = await tl_client.get_account_state()
-            actual_balance = float(account_info.get('accountBalance') or account_info.get('balance', 0))
+            actual_balance = float(account_info.get('balance') or account_info.get('accountBalance', 0))
             
         except Exception as e:
             logger.error(
@@ -322,7 +322,7 @@ class BalanceReconciliationMonitor:
             total_pnl = 0.0
             for pos in positions:
                 # Try different field names (API may vary)
-                pnl = float(pos.get('unrealizedProfitLoss', 0) or pos.get('profit', 0) or pos.get('pnl', 0))
+                pnl = float(pos.get('unrealizedPl', 0) or pos.get('profit', 0) or pos.get('pnl', 0))
                 total_pnl += pnl
             
             return total_pnl
