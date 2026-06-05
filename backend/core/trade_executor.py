@@ -344,6 +344,12 @@ class TradeExecutor:
                 f"{side.upper()} {lot_size} lots of {signal.symbol}"
             )
             
+            # Set validity based on order type
+            if type_ == "market":
+                validity = "IOC"  # Market orders must use IOC (Immediate or Cancel)
+            else:
+                validity = "GTC"  # Limit/Stop orders can use GTC (Good Till Cancel)
+            
             order = await client.create_order(
                 instrument_id=instrument_id,
                 quantity=lot_size,
@@ -353,7 +359,7 @@ class TradeExecutor:
                 stop_price=stop_price,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
-                validity="GTC"
+                validity=validity
             )
             
             # Step 9: Extract order details

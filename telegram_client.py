@@ -206,7 +206,7 @@ class HumanLikeTelegramClient:
             await self._human_delay()
             await self.client.sendChatAction(
                 chat_id=chat_id,
-                action="chatActionTyping"
+                action={"@type": "chatActionTyping"}
             )
             logger.debug(f"Sent typing indicator to chat {chat_id}")
         except Exception as e:
