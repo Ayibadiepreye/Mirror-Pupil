@@ -508,18 +508,24 @@ class TradeLockerClient:
     ) -> Dict:
         """
         Modify position SL/TP.
-        Supports both stop_loss/take_profit and stopLoss/takeProfit kwargs.
+        Wrapper that accepts stop_loss/take_profit and converts to SDK's sl/tp format.
         """
         logger.info(
             f"[{self.credential_key}] Modifying position {position_id}: "
             f"SL={stop_loss}, TP={take_profit}"
         )
         
+        # Build modification_params dict with SDK's expected keys (sl/tp)
+        modification_params = {}
+        if stop_loss is not None:
+            modification_params["sl"] = stop_loss
+        if take_profit is not None:
+            modification_params["tp"] = take_profit
+        
         result = await self._call_api(
             "modify_position",
             position_id=position_id,
-            stop_loss=stop_loss,
-            take_profit=take_profit
+            modification_params=modification_params
         )
         
         logger.info(f"[{self.credential_key}] ✓ Position modified")
