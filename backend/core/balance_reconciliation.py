@@ -108,8 +108,8 @@ class BalanceReconciliationMonitor:
             return
         
         try:
-            # Poll actual balance
-            account_info = await tl_client.get_account_state(account.tl_account_id)
+            # Poll actual balance (client is dedicated to this account)
+            account_info = await tl_client.get_account_state()
             actual_balance = float(account_info.get('accountBalance') or account_info.get('balance', 0))
             
         except Exception as e:

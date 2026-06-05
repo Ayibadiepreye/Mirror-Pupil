@@ -318,13 +318,17 @@ class TradeLockerClient:
         
         return []
     
-    async def get_account_state(self, account_id: int) -> Dict:
+    async def get_account_state(self) -> Dict:
         """
         Get account state (balance, equity, margin, etc.).
-        """
-        logger.debug(f"[{self.credential_key}] Fetching account state for {account_id}...")
         
-        state = await self._call_api("get_account_state", account_id)
+        Note: TLAPI's get_account_state() doesn't accept account_id - it uses
+        the currently authenticated account. Since each TradeLockerClient instance
+        is now dedicated to one account, this works correctly.
+        """
+        logger.debug(f"[{self.credential_key}] Fetching account state...")
+        
+        state = await self._call_api("get_account_state")
         return state
     
     async def get_all_instruments(self, force_refresh: bool = False) -> List[Dict]:

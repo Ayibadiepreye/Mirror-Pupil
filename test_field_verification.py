@@ -91,15 +91,14 @@ async def discover_all_fields(client: TradeLockerClient):
         # Account State
         print("=== ACCOUNT STATE (get_account_state) ===")
         print("-" * 40)
-        if accounts:
-            account_id = accounts[0].get('id')
-            state = await client.get_account_state(account_id)
+        try:
+            state = await client.get_account_state()
             print(f"Keys: {list(state.keys())}")
             print(f"\nSample state:")
             for key, value in state.items():
                 print(f"  {key}: {value}")
-        else:
-            print("No accounts to query state")
+        except Exception as e:
+            print(f"Failed to get account state: {e}")
         print()
         
         # Positions
@@ -139,16 +138,31 @@ async def discover_all_fields(client: TradeLockerClient):
 
 async def main():
     """Run verification tests."""
-    # Load environment
-    load_dotenv()
+    print("\n" + "="*60)
+    print("TradeLocker Field Verification Tests")
+    print("="*60 + "\n")
     
+    # Option 1: Try loading from .env first
+    load_dotenv()
     email = os.getenv("TL_EMAIL")
     password = os.getenv("TL_PASSWORD")
-    server = os.getenv("TL_SERVER", "live")
-    environment = os.getenv("TL_ENVIRONMENT", "demo")
+    server = os.getenv("TL_SERVER")
+    environment = os.getenv("TL_ENVIRONMENT")
+    
+    # Option 2: Prompt if not in .env
+    if not email or not password:
+        print("Enter TradeLocker credentials (or add to .env file):\n")
+        email = input("Email: ").strip()
+        password = input("Password: ").strip()
+        environment = input("Environment (live/demo) [demo]: ").strip() or "demo"
+        server = input("Server name [live]: ").strip() or "live"
+        print()
+    else:
+        environment = environment or "demo"
+        server = server or "live"
     
     if not email or not password:
-        print("Error: TL_EMAIL and TL_PASSWORD must be set in .env file")
+        print("Error: Email and password are required")
         return
     
     print(f"Connecting to TradeLocker ({environment})...")

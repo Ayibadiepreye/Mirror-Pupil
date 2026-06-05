@@ -21,13 +21,13 @@ class AccountManager:
     """
     
     def __init__(self):
-        # Credential key (email) → TradeLockerClient
+        # Account key (email:account_id) → TradeLockerClient (ONE CLIENT PER SUB-ACCOUNT)
         self.clients: Dict[str, TradeLockerClient] = {}
         
         # Account key (email:account_id) → account info
         self.accounts: Dict[str, Dict] = {}
         
-        # Background tasks
+        # Background tasks per account
         self.refresh_tasks: Dict[str, asyncio.Task] = {}
         
         logger.info("Initialized AccountManager")
@@ -36,35 +36,35 @@ class AccountManager:
         self,
         email: str,
         password: str,
-        server: str = "live"
+        server: str = "live",
+        environment: str = "demo"
     ) -> bool:
         """
         Add a TradeLocker credential and discover its sub-accounts.
+        Creates ONE CLIENT PER SUB-ACCOUNT (not per credential).
         
         Args:
             email: TradeLocker login email
             password: TradeLocker password
-            server: "live" or "demo"
+            server: Prop firm server name (e.g., "HEROFX", "Blue Guardian")
+            environment: "live" or "demo" (for URL construction)
         
         Returns:
             True if successful, False otherwise
         """
-        if email in self.clients:
-            logger.warning(f"Credential {email} already exists")
-            return False
+        logger.info(f"Adding credential: {email} ({environment}, {server})")
         
-        logger.info(f"Adding credential: {email} ({server})")
-        
-        # Create client
-        client = TradeLockerClient(
+        # Step 1: Create temporary client to discover sub-accounts
+        temp_client = TradeLockerClient(
             email=email,
             password=password,
-            server=server
+            server=server,
+            environment=environment
         )
         
         # Authenticate
         try:
-            success = await client.authenticate()
+            success = await temp_client.authenticate()
             if not success:
                 logger.error(f"Failed to authenticate {email}")
                 return False
@@ -72,19 +72,35 @@ class AccountManager:
             logger.error(f"Authentication error for {email}: {e}")
             return False
         
-        # Store client
-        self.clients[email] = client
-        
-        # Discover sub-accounts
+        # Step 2: Discover sub-accounts
         try:
-            accounts = await client.get_all_accounts()
+            accounts = await temp_client.get_all_accounts()
             
+            if not accounts:
+                logger.warning(f"No sub-accounts found for {email}")
+                return False
+            
+            # Step 3: Create ONE CLIENT PER SUB-ACCOUNT
             for acct in accounts:
                 account_id = acct.get('id')
                 account_number = acct.get('accNum', account_id)
                 balance = acct.get('accountBalance', 0.0)
                 
                 account_key = f"{email}:{account_id}"
+                
+                # Create dedicated client for this sub-account
+                account_client = TradeLockerClient(
+                    email=email,
+                    password=password,
+                    server=server,
+                    environment=environment
+                )
+                
+                # Authenticate this client
+                await account_client.authenticate()
+                
+                # Store client per sub-account
+                self.clients[account_key] = account_client
                 
                 self.accounts[account_key] = {
                     'account_key': account_key,
@@ -93,9 +109,10 @@ class AccountManager:
                     'account_number': account_number,
                     'email': email,
                     'server': server,
+                    'environment': environment,
                     'initial_balance': balance,
                     'current_balance': balance,
-                    'client': client  # Reference to shared client
+                    'client': account_client  # Dedicated client for this account
                 }
                 
                 logger.info(
@@ -105,21 +122,29 @@ class AccountManager:
             
             logger.info(f"✓ Added credential {email} with {len(accounts)} sub-account(s)")
             
-            # Start token refresh task
-            task = asyncio.create_task(token_refresh_loop(client))
-            self.refresh_tasks[email] = task
+            # Start token refresh task for each client
+            for account_key, client in self.clients.items():
+                task = asyncio.create_task(token_refresh_loop(client))
+                self.refresh_tasks[account_key] = task
             
             return True
             
         except Exception as e:
             logger.error(f"Failed to discover accounts for {email}: {e}")
-            # Clean up
-            del self.clients[email]
             return False
     
     def get_client(self, credential_key: str) -> Optional[TradeLockerClient]:
-        """Get TradeLocker client for a credential."""
-        return self.clients.get(credential_key)
+        """
+        Get TradeLocker client for a credential.
+        
+        Note: This returns the first account's client for backwards compatibility.
+        For multi-account setups, use get_client_for_account() instead.
+        """
+        # Find first account with this credential
+        for account_key, account in self.accounts.items():
+            if account['credential_key'] == credential_key:
+                return self.clients.get(account_key)
+        return None
     
     def get_account(self, account_key: str) -> Optional[Dict]:
         """Get account info by account key."""
@@ -133,10 +158,9 @@ class AccountManager:
             account_key: Account key (format: email:account_id)
         
         Returns:
-            TradeLockerClient instance or None if account not found
+            TradeLockerClient instance (dedicated to this account) or None
         """
-        account = self.get_account(account_key)
-        return account['client'] if account else None
+        return self.clients.get(account_key)
     
     def get_all_accounts(self) -> List[Dict]:
         """Get all registered accounts."""
@@ -161,13 +185,16 @@ class AccountManager:
             logger.error(f"Account not found: {account_key}")
             return None
         
-        client = account['client']
-        account_id = account['account_id']
+        client = self.clients.get(account_key)
+        if not client:
+            logger.error(f"Client not found for account: {account_key}")
+            return None
         
         try:
-            state = await client.get_account_state(account_id)
-            balance = state.get('balance', 0.0)
-            equity = state.get('equity', 0.0)
+            # Client is dedicated to this account, no account_id needed
+            state = await client.get_account_state()
+            balance = state.get('accountBalance') or state.get('balance', 0.0)
+            equity = state.get('accountEquity') or state.get('equity', 0.0)
             
             # Update stored balance
             account['current_balance'] = balance
@@ -188,12 +215,10 @@ class AccountManager:
         """
         Get all open positions for an account.
         """
-        account = self.get_account(account_key)
-        if not account:
-            logger.error(f"Account not found: {account_key}")
+        client = self.clients.get(account_key)
+        if not client:
+            logger.error(f"Client not found for account: {account_key}")
             return []
-        
-        client = account['client']
         
         try:
             positions = await client.get_all_positions()
@@ -215,8 +240,10 @@ class AccountManager:
         if not positions:
             return 0
         
-        account = self.get_account(account_key)
-        client = account['client']
+        client = self.clients.get(account_key)
+        if not client:
+            logger.error(f"Client not found for account: {account_key}")
+            return 0
         
         closed_count = 0
         
@@ -238,9 +265,9 @@ class AccountManager:
         logger.info("Shutting down AccountManager...")
         
         # Cancel all refresh tasks
-        for email, task in self.refresh_tasks.items():
+        for account_key, task in self.refresh_tasks.items():
             task.cancel()
-            logger.debug(f"Cancelled refresh task for {email}")
+            logger.debug(f"Cancelled refresh task for {account_key}")
         
         # Wait for tasks to finish
         if self.refresh_tasks:

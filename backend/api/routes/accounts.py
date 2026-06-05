@@ -375,14 +375,16 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                     logger.info(f"  ✓ Added account: {account_key} (${balance:,.2f})")
                     added.append(account_key)
                     
-                    # Add credential to AccountManager if not already added
+                    # Add credential to AccountManager for each account
                     account_manager = get_account_manager()
-                    if not account_manager.get_client(request.email):
+                    # Check if this specific account already has a client
+                    if not account_manager.get_client_for_account(account_key):
                         try:
                             await account_manager.add_credential(
                                 email=request.email,
                                 password=request.password,
-                                server=request.server
+                                server=request.prop_firm or "live",  # Prop firm name
+                                environment=request.server  # "live" or "demo"
                             )
                             logger.info(f"  ✓ Added credential to AccountManager: {request.email}")
                         except Exception as e:
