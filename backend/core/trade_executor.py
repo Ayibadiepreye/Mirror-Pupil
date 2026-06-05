@@ -428,6 +428,35 @@ class TradeExecutor:
             trade_id = await self.db.add_active_trade(active_trade)
             
             if trade_id:
+                logger.info(
+                    f"[{account_key}] ✓ Trade recorded: ID={trade_id}, "
+                    f"Signal={signal_id}, Status={status}"
+                )
+                
+                # If position_id is None for a FILLED market order, fetch it from TradeLocker
+                if position_id is None and status == "filled" and type_ == "market":
+                    try:
+                        logger.debug(f"[{account_key}] Fetching position_id for order {order_id}")
+                        await asyncio.sleep(0.5)  # Wait for position to settle
+                        
+                        positions = await client.get_all_positions()
+                        
+                        # Find position matching this instrument (most recent one)
+                        for pos in positions:
+                            pos_instrument_id = pos.get('tradableInstrumentId')
+                            if pos_instrument_id == instrument_id:
+                                position_id = pos.get('id')
+                                if position_id:
+                                    # Update database with actual position_id
+                                    await self.db.update_trade_position_id(trade_id, str(position_id))
+                                    logger.info(
+                                        f"[{account_key}] ✓ Updated trade {trade_id} with position_id: {position_id}"
+                                    )
+                                    break
+                    except Exception as e:
+                        logger.error(
+                            f"[{account_key}] Failed to fetch position_id for trade {trade_id}: {e}"
+                        )
                 if status == "filled":
                     logger.info(
                         f"[{account_key}] ✅ Trade recorded in database: trade_id={trade_id} (FILLED)"

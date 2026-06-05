@@ -764,6 +764,20 @@ class DatabaseManager:
             logger.error(f"Failed to update lot size for trade {trade_id}: {e}")
             return False
     
+    async def update_trade_position_id(self, trade_id: int, position_id: str) -> bool:
+        """Update TradeLocker position_id for an active trade."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET tl_position_id = $1 WHERE trade_id = $2",
+                    position_id, trade_id
+                )
+                logger.debug(f"✓ Updated position_id for trade {trade_id}: {position_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update position_id for trade {trade_id}: {e}")
+            return False
+    
     async def mark_tp1_hit(self, trade_id: int) -> bool:
         """Mark TP1 as hit for trailing stop activation."""
         try:
