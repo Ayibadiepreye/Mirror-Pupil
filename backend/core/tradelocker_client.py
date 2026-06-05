@@ -52,6 +52,7 @@ class TradeLockerClient:
         password: str,
         server: str,  # Prop firm server name (e.g., "Blue Guardian")
         environment: str = "live",  # "live" or "demo" - for URL construction
+        account_id: Optional[int] = None,  # Specific sub-account ID to bind to
         max_rps: int = 5,
         circuit_failure_threshold: int = 3,
         circuit_timeout: int = 120,
@@ -62,6 +63,7 @@ class TradeLockerClient:
         self.password = password
         self.server = server  # Prop firm name for auth payload
         self.environment = environment  # live/demo for URL
+        self.account_id = account_id  # Specific sub-account to bind to
         self.credential_key = email
         
         # Rate limiting
@@ -107,6 +109,7 @@ class TradeLockerClient:
         
         logger.info(
             f"Initialized TradeLockerClient for {email} on {server} ({environment}) "
+            f"account_id={account_id} "
             f"(rate: {max_rps} req/s, circuit: {circuit_failure_threshold} failures)"
         )
     
@@ -216,11 +219,23 @@ class TradeLockerClient:
                         
                         # Initialize TLAPI client with token
                         # Use full environment URL (e.g., "https://demo.tradelocker.com")
-                        self.client = TLAPI(
-                            environment=self.environment_url,
-                            access_token=self.access_token,
-                            refresh_token=self.refresh_token
-                        )
+                        # Pass account_id to bind this client to specific sub-account
+                        if self.account_id:
+                            self.client = TLAPI(
+                                environment=self.environment_url,
+                                access_token=self.access_token,
+                                refresh_token=self.refresh_token,
+                                account_id=self.account_id  # Bind to specific sub-account
+                            )
+                            logger.debug(f"[{self.credential_key}] TLAPI bound to account_id={self.account_id}")
+                        else:
+                            # No account_id specified - SDK will use first account
+                            self.client = TLAPI(
+                                environment=self.environment_url,
+                                access_token=self.access_token,
+                                refresh_token=self.refresh_token
+                            )
+                            logger.debug(f"[{self.credential_key}] TLAPI using default (first) account")
                         
                         logger.info(f"[{self.credential_key}] ✓ Authenticated successfully")
                         self._record_success()

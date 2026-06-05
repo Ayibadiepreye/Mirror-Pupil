@@ -93,7 +93,8 @@ class AccountManager:
                     email=email,
                     password=password,
                     server=server,
-                    environment=environment
+                    environment=environment,
+                    account_id=account_id  # Bind to specific sub-account
                 )
                 
                 # Authenticate this client

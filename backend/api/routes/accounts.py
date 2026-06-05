@@ -300,16 +300,17 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
     try:
         logger.info(f"Bulk adding {len(request.account_ids)} account(s) for {request.email} on {request.prop_firm or 'default'} ({request.server})")
         
-        # Create temporary client to fetch account details
-        client = TradeLockerClient(
+        # Create temporary client to fetch account details (not bound to specific account)
+        temp_client = TradeLockerClient(
             email=request.email,
             password=request.password,
             server=request.prop_firm,  # Broker/prop firm name
-            environment=request.server  # "live" or "demo"
+            environment=request.server,  # "live" or "demo"
+            account_id=None  # Temporary client for discovery only
         )
         
         # Authenticate
-        success = await client.authenticate()
+        success = await temp_client.authenticate()
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -317,7 +318,7 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
             )
         
         # Get all accounts from TradeLocker
-        all_accounts = await client.get_all_accounts()
+        all_accounts = await temp_client.get_all_accounts()
         
         # Map account IDs to full account data
         accounts_map = {}
@@ -374,21 +375,6 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                 if add_success:
                     logger.info(f"  ✓ Added account: {account_key} (${balance:,.2f})")
                     added.append(account_key)
-                    
-                    # Add credential to AccountManager for each account
-                    account_manager = get_account_manager()
-                    # Check if this specific account already has a client
-                    if not account_manager.get_client_for_account(account_key):
-                        try:
-                            await account_manager.add_credential(
-                                email=request.email,
-                                password=request.password,
-                                server=request.prop_firm or "live",  # Prop firm name
-                                environment=request.server  # "live" or "demo"
-                            )
-                            logger.info(f"  ✓ Added credential to AccountManager: {request.email}")
-                        except Exception as e:
-                            logger.warning(f"  ⚠️ Failed to add credential to AccountManager: {e}")
                 else:
                     logger.warning(f"  ✗ Failed to add account: {account_key}")
                     failed.append(account_key)
@@ -397,8 +383,22 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                 logger.error(f"  ✗ Error adding account {account_key}: {e}")
                 failed.append(account_key)
         
-        # Sync channel subscriptions for all new accounts
+        # Add credentials to AccountManager ONCE for all sub-accounts
         if added:
+            account_manager = get_account_manager()
+            try:
+                # This will create dedicated clients for ALL sub-accounts under this credential
+                await account_manager.add_credential(
+                    email=request.email,
+                    password=request.password,
+                    server=request.prop_firm or "live",  # Prop firm name
+                    environment=request.server  # "live" or "demo"
+                )
+                logger.info(f"  ✓ Added credentials to AccountManager for {len(added)} account(s)")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Failed to add credentials to AccountManager: {e}")
+            
+            # Sync channel subscriptions for all new accounts
             await db.sync_channel_subscriptions()
         
         logger.info(
