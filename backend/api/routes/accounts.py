@@ -25,6 +25,7 @@ class AccountCreate(BaseModel):
     tl_email: str
     tl_password: str
     tl_server: str = "live"
+    tl_prop_firm: str = ""
     display_name: Optional[str] = None
     initial_balance: float
     risk_profile_id: Optional[int] = None
@@ -239,6 +240,7 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
             tl_email=account_data.tl_email,
             tl_password=account_data.tl_password,
             tl_server=account_data.tl_server,
+            tl_prop_firm=account_data.tl_prop_firm,
             display_name=account_data.display_name,
             initial_balance=account_data.initial_balance,
             current_balance=account_data.initial_balance,

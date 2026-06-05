@@ -280,14 +280,14 @@ class DatabaseManager:
                     """
                     INSERT INTO accounts (
                         account_key, credential_key, tl_account_id,
-                        tl_email, tl_password, tl_server, display_name,
+                        tl_email, tl_password, tl_server, tl_prop_firm, display_name,
                         initial_balance, current_balance, highest_banked_balance,
                         daily_start_balance, last_synced_balance, cycle_start_date
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     """,
                     account.account_key, account.credential_key, account.tl_account_id,
                     account.tl_email, account.tl_password, account.tl_server,
-                    account.display_name, account.initial_balance, account.current_balance,
+                    account.tl_prop_firm, account.display_name, account.initial_balance, account.current_balance,
                     account.initial_balance,  # highest_banked_balance starts at initial
                     account.current_balance,  # daily_start_balance
                     account.current_balance,  # last_synced_balance
