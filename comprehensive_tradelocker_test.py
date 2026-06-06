@@ -995,7 +995,8 @@ class ComprehensiveTradeLockerTest:
                 type_="market",
                 stop_loss=sl_price,
                 take_profit=tp_price,
-                validity="IOC"
+                validity="IOC",
+                position_netting=False  # No netting - hedging mode
             )
             
             # SDK returns order_id as int, not dict
@@ -1261,7 +1262,7 @@ class ComprehensiveTradeLockerTest:
             instrument_id = await self.client.get_instrument_id_from_symbol_name("EURUSD")
             
             # Place limit BUY order 50 pips below market (won't fill)
-            # Note: position_netting=False for LIMIT orders (only MARKET supports netting)
+            # Note: position_netting=False (no netting for any order type)
             limit_price = market_price - 0.0050
             
             order = await self.client.create_order(
@@ -1271,7 +1272,7 @@ class ComprehensiveTradeLockerTest:
                 type_="limit",
                 price=limit_price,
                 validity="GTC",
-                position_netting=False  # LIMIT orders don't support netting
+                position_netting=False  # No netting - hedging mode for all orders
             )
             
             # SDK might return order_id as int or dict response

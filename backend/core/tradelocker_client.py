@@ -448,7 +448,7 @@ class TradeLockerClient:
         stop_loss: Optional[float] = None,
         take_profit: Optional[float] = None,
         validity: str = "GTC",  # "GTC" or "IOC"
-        position_netting: bool = True
+        position_netting: bool = False  # ALWAYS False - no netting/hedging disabled
     ) -> Dict:
         """
         Create an order.
@@ -463,7 +463,7 @@ class TradeLockerClient:
             stop_loss: SL price
             take_profit: TP price
             validity: "GTC" (Good Till Cancel) or "IOC" (Immediate or Cancel)
-            position_netting: True for netting, False for hedging
+            position_netting: ALWAYS False - netting disabled for all orders
         
         Returns:
             Order response dict
@@ -473,9 +473,8 @@ class TradeLockerClient:
             f"{side.upper()} {quantity} lots of instrument {instrument_id}"
         )
         
-        # Position netting only supported for MARKET orders
-        if type_.lower() != "market":
-            position_netting = False
+        # ALWAYS disable netting - we want hedging mode for all orders
+        position_netting = False
         
         # Prepare SL/TP types (absolute prices)
         stop_loss_type = "absolute" if stop_loss else None
@@ -538,21 +537,21 @@ class TradeLockerClient:
     ) -> Dict:
         """
         Close position (full or partial).
-        Wrapper that accepts quantity and converts to SDK's 'lots' parameter.
+        Wrapper that accepts quantity and converts to SDK's 'close_quantity' parameter.
         
         Args:
             position_id: Position ID
             quantity: Lot size to close (None = close all, X = close X lots)
         
         SDK Translation:
-            quantity=None → lots=0 (full close)
-            quantity=X → lots=X (partial close of X lots)
+            quantity=None → close_quantity=0 (full close)
+            quantity=X → close_quantity=X (partial close of X lots)
         
         Note: Partial close calculation (percentage to lots) is done by caller.
         """
-        # Convert quantity to SDK's 'lots' parameter
-        # SDK expects: lots=0 for full close, lots=X for partial close
-        lots = 0 if quantity is None else quantity
+        # Convert quantity to SDK's 'close_quantity' parameter
+        # SDK expects: close_quantity=0 for full close, close_quantity=X for partial close
+        close_quantity = 0 if quantity is None else quantity
         
         if quantity:
             logger.info(
@@ -564,7 +563,7 @@ class TradeLockerClient:
         result = await self._call_api(
             "close_position",
             position_id=position_id,
-            lots=lots
+            close_quantity=close_quantity
         )
         
         logger.info(f"[{self.credential_key}] ✓ Position closed")
