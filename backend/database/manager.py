@@ -1525,6 +1525,34 @@ async def get_db() -> DatabaseManager:
             logger.error(f"Failed to update trade SL: {e}")
             return False
     
+    async def update_trade_lot_size(self, trade_id: int, new_lot_size: float) -> bool:
+        """Update lot size for an active trade (after partial close)."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET lot_size = $1 WHERE trade_id = $2",
+                    new_lot_size, trade_id
+                )
+                logger.debug(f"✓ Updated lot size for trade {trade_id}: {new_lot_size}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update trade lot size: {e}")
+            return False
+    
+    async def update_trade_position_id(self, trade_id: int, position_id: str) -> bool:
+        """Update position ID for a trade."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET tl_position_id = $1 WHERE trade_id = $2",
+                    position_id, trade_id
+                )
+                logger.debug(f"✓ Updated position_id for trade {trade_id}: {position_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update position_id: {e}")
+            return False
+    
     async def move_trade_to_history(
         self,
         trade_id: int,

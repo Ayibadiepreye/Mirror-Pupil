@@ -21,6 +21,7 @@ from ..risk.daily_reset import get_daily_reset_handler
 from ..core.account_manager import get_account_manager
 from ..core.trade_executor import TradeExecutor
 from ..core.health_monitor import get_health_monitor
+from ..core.notification_service import get_notification_service
 from ..channels.billirichy.autonomous import get_billirichy_autonomous_manager
 from ..channels.firepips.autonomous import get_firepips_autonomous_manager
 from ..core.balance_reconciliation import get_balance_monitor
@@ -29,6 +30,21 @@ from ..core.pending_order_monitor import get_pending_order_monitor
 from ..core.position_reconciliation import get_position_reconciliation_monitor
 from ..telegram_integration import get_telegram_integration
 from ..channels.registry import get_registry
+
+
+# Background cleanup task for notifications
+async def _notification_cleanup_loop(db: DatabaseManager):
+    """Background task to cleanup notifications older than 48 hours."""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Run every hour
+            count = await db.cleanup_old_notifications()
+            if count > 0:
+                logger.info(f"Cleaned up {count} old notification(s)")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Notification cleanup error: {e}")
 
 
 # Global instances
@@ -103,6 +119,14 @@ async def lifespan(app: FastAPI):
     trade_executor = TradeExecutor(db, dry_run=False)
     await trade_executor.initialize()
     logger.info("✓ Trade executor initialized")
+    
+    # Initialize notification service
+    notification_service = get_notification_service(db)
+    logger.info("✓ Notification service initialized")
+    
+    # Start notification cleanup scheduler (48-hour cleanup)
+    asyncio.create_task(_notification_cleanup_loop(db))
+    logger.info("✓ Notification cleanup scheduler started")
     
     # Inject TradeExecutor into channel registry (CRITICAL: enables signal execution)
     registry = get_registry()

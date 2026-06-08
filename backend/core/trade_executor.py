@@ -10,6 +10,7 @@ import os
 
 from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
+from .notification_service import get_notification_service
 from ..database import DatabaseManager, ActiveTrade
 from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
 
@@ -31,6 +32,7 @@ class TradeExecutor:
         self.dry_run = dry_run or os.getenv("DRY_RUN", "false").lower() == "true"
         self.account_manager = get_account_manager()
         self.risk_enforcer: Optional[RiskEnforcer] = None
+        self.notification_service = None  # Will be initialized later
         
         # Default lot size
         self.default_lot_size = float(os.getenv("DEFAULT_LOT_SIZE", "0.1"))
@@ -41,9 +43,10 @@ class TradeExecutor:
             logger.info("✓ TradeExecutor initialized (LIVE mode)")
     
     async def initialize(self):
-        """Initialize risk enforcer (async)."""
+        """Initialize risk enforcer and notification service (async)."""
         from ..risk import get_risk_enforcer
         self.risk_enforcer = await get_risk_enforcer(self.db)
+        self.notification_service = get_notification_service(self.db)
     
     async def execute_signal(
         self,
@@ -487,6 +490,21 @@ class TradeExecutor:
                     f"[{account_key}] ✓ Trade recorded: ID={trade_id}, "
                     f"Signal={signal_id}, Status={status}"
                 )
+                
+                # Send notification for trade execution
+                if self.notification_service and status == "filled":
+                    # Get channel name
+                    channel = await self.db.get_channel(channel_id)
+                    channel_name = channel.display_name if channel else f"Channel {channel_id}"
+                    
+                    await self.notification_service.trade_executed(
+                        account_key=account_key,
+                        symbol=signal.symbol,
+                        direction=signal.direction,
+                        lot_size=lot_size,
+                        entry_price=fill_price,
+                        channel_name=channel_name
+                    )
                 
                 # If position_id is None for a FILLED market order, fetch it from TradeLocker
                 if position_id is None and status == "filled" and type_ == "market":
@@ -1157,3 +1175,213 @@ async def get_trade_executor(db: DatabaseManager) -> TradeExecutor:
         _executor = TradeExecutor(db)
         await _executor.initialize()
     return _executor
+
+
+    # ==================== MANUAL ACTION METHODS ====================
+    
+    async def execute_manual_close(self, trade_id: int, account_key: str, reason: str = "Manual close") -> bool:
+        """
+        Manually close a trade from the GUI.
+        
+        Args:
+            trade_id: Database trade ID
+            account_key: Account key
+            reason: Close reason
+        
+        Returns:
+            True if successful
+        """
+        try:
+            # Get trade from database
+            trade = await self.db.get_active_trade_by_id(trade_id)
+            if not trade:
+                logger.error(f"Trade {trade_id} not found")
+                return False
+            
+            # Get TradeLocker client
+            account = self.account_manager.get_account(account_key)
+            if not account:
+                logger.error(f"Account {account_key} not found")
+                return False
+            
+            client = account['client']
+            
+            # Close position on TradeLocker
+            if trade.tl_position_id:
+                success = await client.close_position(int(trade.tl_position_id))
+                if not success:
+                    logger.error(f"Failed to close position {trade.tl_position_id}")
+                    return False
+            
+            # Get exit price
+            market_price = await client.get_market_price(trade.symbol)
+            exit_price = market_price if market_price else trade.entry_price
+            
+            # Calculate P&L
+            instruments = await client.get_all_instruments()
+            instrument = next(
+                (i for i in instruments if trade.symbol in i.get('name', '')),
+                None
+            )
+            
+            from ..risk.calculator import calculate_usd_pnl
+            pnl = await calculate_usd_pnl(
+                symbol=trade.symbol,
+                entry_price=trade.entry_price,
+                exit_price=exit_price,
+                lot_size=trade.lot_size,
+                direction=trade.direction,
+                client=client,
+                instrument=instrument
+            )
+            
+            # Move to history with manual action type
+            await self.db.move_trade_to_history(
+                trade_id=trade_id,
+                exit_price=exit_price,
+                pnl=pnl,
+                outcome="WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BE",
+                close_reason="MANUAL_CLOSE",
+                manual_action_type="MANUAL_CLOSE"
+            )
+            
+            # Send notification
+            if self.notification_service:
+                await self.notification_service.trade_closed(
+                    account_key=account_key,
+                    symbol=trade.symbol,
+                    pnl=pnl,
+                    close_reason="MANUAL_CLOSE"
+                )
+            
+            logger.info(f"✓ Manually closed trade {trade_id}: {trade.symbol} P&L=${pnl:.2f}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to manually close trade {trade_id}: {e}")
+            return False
+    
+    async def execute_manual_breakeven(self, trade_id: int, account_key: str) -> bool:
+        """
+        Set trade SL to breakeven (entry price).
+        
+        Args:
+            trade_id: Database trade ID
+            account_key: Account key
+        
+        Returns:
+            True if successful
+        """
+        try:
+            # Get trade from database
+            trade = await self.db.get_active_trade_by_id(trade_id)
+            if not trade:
+                logger.error(f"Trade {trade_id} not found")
+                return False
+            
+            # Get TradeLocker client
+            account = self.account_manager.get_account(account_key)
+            if not account:
+                logger.error(f"Account {account_key} not found")
+                return False
+            
+            client = account['client']
+            
+            # Set SL to entry price
+            new_sl = trade.entry_price
+            
+            if trade.tl_position_id:
+                success = await client.modify_position(
+                    int(trade.tl_position_id),
+                    {'sl': new_sl}
+                )
+                if not success:
+                    logger.error(f"Failed to modify position {trade.tl_position_id}")
+                    return False
+            
+            # Update database
+            await self.db.update_trade_sl(trade_id, new_sl)
+            
+            # Send notification
+            if self.notification_service:
+                await self.notification_service.management_action(
+                    account_key=account_key,
+                    action_type="BREAKEVEN",
+                    symbol=trade.symbol,
+                    details=f"SL set to breakeven: {new_sl}"
+                )
+            
+            logger.info(f"✓ Set trade {trade_id} to breakeven: SL={new_sl}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to set breakeven for trade {trade_id}: {e}")
+            return False
+    
+    async def execute_manual_partial(self, trade_id: int, account_key: str, percentage: int) -> bool:
+        """
+        Take partial profit on a trade.
+        
+        Args:
+            trade_id: Database trade ID
+            account_key: Account key
+            percentage: Percentage to close (25, 50, or 75)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            # Get trade from database
+            trade = await self.db.get_active_trade_by_id(trade_id)
+            if not trade:
+                logger.error(f"Trade {trade_id} not found")
+                return False
+            
+            # Get TradeLocker client
+            account = self.account_manager.get_account(account_key)
+            if not account:
+                logger.error(f"Account {account_key} not found")
+                return False
+            
+            client = account['client']
+            
+            # Calculate partial close amount
+            close_lots = (trade.lot_size * percentage) / 100.0
+            
+            # Get instrument for lot rounding
+            instrument = await client.get_instrument(trade.symbol)
+            lot_step = instrument.get('lot_step', 0.01)
+            close_lots = client.round_lot_size(close_lots, lot_step)
+            
+            # Partial close on TradeLocker
+            if trade.tl_position_id:
+                success = await client.close_position(
+                    int(trade.tl_position_id),
+                    quantity=close_lots
+                )
+                if not success:
+                    logger.error(f"Failed to partial close position {trade.tl_position_id}")
+                    return False
+            
+            # Update lot size in database
+            remaining_lots = trade.lot_size - close_lots
+            await self.db.update_trade_lot_size(trade_id, remaining_lots)
+            
+            # Send notification
+            if self.notification_service:
+                await self.notification_service.management_action(
+                    account_key=account_key,
+                    action_type=f"PARTIAL_{percentage}%",
+                    symbol=trade.symbol,
+                    details=f"Closed {close_lots} lots ({percentage}%), {remaining_lots} lots remaining"
+                )
+            
+            logger.info(
+                f"✓ Partial close {percentage}% on trade {trade_id}: "
+                f"closed {close_lots} lots, {remaining_lots} remaining"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to take partial profit on trade {trade_id}: {e}")
+            return False

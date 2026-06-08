@@ -11,6 +11,7 @@ from datetime import datetime
 
 from ..database import DatabaseManager, ActiveTrade
 from .account_manager import get_account_manager
+from .notification_service import get_notification_service
 
 
 class PositionReconciliationMonitor:
@@ -28,6 +29,7 @@ class PositionReconciliationMonitor:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.account_manager = get_account_manager()
+        self.notification_service = get_notification_service(db)
         self.monitor_task: Optional[asyncio.Task] = None
         self.poll_interval = 60  # Check every 60 seconds
         
@@ -206,12 +208,21 @@ class PositionReconciliationMonitor:
                 trade.trade_id,
                 exit_price=exit_price,
                 pnl=pnl,
+                outcome="WIN" if pnl > 0 else "LOSS" if pnl < 0 else "BE",
                 close_reason=close_reason
             )
             
             logger.info(
                 f"[{account_key}] ✓ Reconciled closed position: {trade.symbol} "
                 f"P&L=${pnl:.2f} Reason={close_reason}"
+            )
+            
+            # Send notification for trade closure
+            await self.notification_service.trade_closed(
+                account_key=account_key,
+                symbol=trade.symbol,
+                pnl=pnl,
+                close_reason=close_reason
             )
             
             # Update account balance

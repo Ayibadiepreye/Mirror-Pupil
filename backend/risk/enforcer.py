@@ -9,6 +9,7 @@ from loguru import logger
 
 from ..database import DatabaseManager, Account, RiskProfile, ActiveTrade
 from .calculator import RiskCalculator, calculate_price_delta, get_risk_calculator
+from ..core.notification_service import get_notification_service
 
 
 class RiskEnforcer:
@@ -25,6 +26,7 @@ class RiskEnforcer:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.calculator = get_risk_calculator()
+        self.notification_service = get_notification_service(db)
         self.breach_check_task: Optional[asyncio.Task] = None
         
         logger.info("Initialized RiskEnforcer")
@@ -279,17 +281,19 @@ class RiskEnforcer:
             
             # Mark as breached
             account.breached = True
-            await self.db.update_account_paused(account.account_key, True)
+            await self.db.update_account(account.account_key, breached=True, paused=True)
+            
+            # Send breach notification
+            loss_pct = ((account.daily_start_balance - current_equity) / account.daily_start_balance) * 100
+            await self.notification_service.risk_breach(
+                account_key=account.account_key,
+                breach_type="Daily Loss",
+                current_value=loss_pct,
+                limit=profile.daily_loss_pct
+            )
             
             # Close all trades
             await self._close_all_account_trades(account.account_key, "DAILY_BREACH")
-            
-            # Notify GUI
-            await self._notify_breach(
-                account.account_key,
-                "DAILY_LOSS_BREACH",
-                f"Equity ${current_equity:.2f} ≤ Floor ${daily_floor:.2f}"
-            )
             
             return True
         
@@ -303,17 +307,19 @@ class RiskEnforcer:
             
             # Mark as breached
             account.breached = True
-            await self.db.update_account_paused(account.account_key, True)
+            await self.db.update_account(account.account_key, breached=True, paused=True)
+            
+            # Send breach notification
+            loss_pct = ((account.initial_balance - current_equity) / account.initial_balance) * 100
+            await self.notification_service.risk_breach(
+                account_key=account.account_key,
+                breach_type="Overall Drawdown",
+                current_value=loss_pct,
+                limit=profile.overall_loss_pct
+            )
             
             # Close all trades
             await self._close_all_account_trades(account.account_key, "OVERALL_BREACH")
-            
-            # Notify GUI
-            await self._notify_breach(
-                account.account_key,
-                "OVERALL_DRAWDOWN_BREACH",
-                f"Equity ${current_equity:.2f} ≤ Floor ${overall_floor:.2f}"
-            )
             
             return True
         
