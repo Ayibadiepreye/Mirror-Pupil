@@ -139,6 +139,14 @@ class TrailingStopUpdater:
         4. Call TradeLocker API to modify order
         5. Update database
         """
+        # CRITICAL: Validate position_id exists before attempting update
+        if not trade.tl_position_id:
+            logger.error(
+                f"Cannot update trailing stop for {trade.signal_id}: "
+                f"position_id not resolved. Trade ID: {trade.trade_id}"
+            )
+            return
+        
         # Get trail distance for this symbol
         trail = TRAIL_DISTANCE.get(trade.symbol)
         if trail is None:

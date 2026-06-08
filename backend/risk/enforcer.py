@@ -388,6 +388,23 @@ class RiskEnforcer:
                         logger.error(f"No TradeLocker client for {account_key}")
                         continue
                     
+                    # CRITICAL: Validate position_id exists before closing
+                    if not trade.tl_position_id:
+                        logger.error(
+                            f"Cannot close position for {trade.signal_id}: "
+                            f"position_id not resolved. Trade ID: {trade.trade_id}. "
+                            f"Marking as failed."
+                        )
+                        # Move to history as failed
+                        await self.db.close_active_trade(
+                            trade_id=trade.trade_id,
+                            exit_price=trade.entry_price,
+                            pnl=0.0,
+                            outcome="FAIL",
+                            close_reason="BREACH_NO_POSITION_ID"
+                        )
+                        continue
+                    
                     # Close position on TradeLocker
                     await tl_client.close_position(trade.tl_position_id)
                     

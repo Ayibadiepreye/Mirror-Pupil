@@ -785,6 +785,19 @@ class TradeExecutor:
         action = mgmt.action
         
         try:
+            # CRITICAL: Validate position_id exists before attempting operations
+            if not trade.tl_position_id:
+                logger.error(
+                    f"[{account_key}] Cannot execute {action} on {trade.signal_id}: "
+                    f"position_id not resolved. Trade ID: {trade.trade_id}"
+                )
+                return {
+                    "trade_id": trade.trade_id,
+                    "status": "failed",
+                    "error": "position_id not resolved",
+                    "action": action
+                }
+            
             # BREAKEVEN
             if action == 'BREAKEVEN':
                 await client.modify_position(
