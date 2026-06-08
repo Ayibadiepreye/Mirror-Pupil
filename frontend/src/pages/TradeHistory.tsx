@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download, TrendingUp } from 'lucide-react'
 import { api } from '../lib/api'
 import { TradeHistory } from '../types'
-import { format } from 'date-fns'
+import { formatLagosTime } from '../lib/utils'
 
 export default function TradeHistoryPage() {
   const [selectedAccount, setSelectedAccount] = useState<string>('')
+  const [isExporting, setIsExporting] = useState(false)
   
   const { data: accounts } = useQuery({
     queryKey: ['accounts'],
@@ -14,15 +16,41 @@ export default function TradeHistoryPage() {
   
   const { data: history, isLoading } = useQuery({
     queryKey: ['trade-history', selectedAccount],
-    queryFn: () => api.getTradeHistory(selectedAccount || undefined, 100, 0),
-    refetchInterval: 5000,
+    queryFn: () => api.getTradeHistory(selectedAccount || undefined, 500, 0),
+    refetchInterval: 10000,
   })
+  
+  const handleExport = async () => {
+    try {
+      setIsExporting(true)
+      await api.exportTradeHistory(selectedAccount || undefined)
+    } catch (error) {
+      console.error('Export failed:', error)
+      alert('Failed to export trade history')
+    } finally {
+      setIsExporting(false)
+    }
+  }
   
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-kob-text mb-2">Trade History</h2>
-        <p className="text-kob-text-dim">View past trades and performance</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-kob-text mb-2">Trade History</h2>
+          <p className="text-kob-text-dim">
+            {history?.length || 0} completed trade{history?.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        
+        <button
+          onClick={handleExport}
+          disabled={isExporting || !history || history.length === 0}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Download size={18} />
+          {isExporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
       
       {/* Filter */}
@@ -33,7 +61,7 @@ export default function TradeHistoryPage() {
         <select
           value={selectedAccount}
           onChange={(e) => setSelectedAccount(e.target.value)}
-          className="w-full md:w-64 bg-kob-bg-secondary border border-kob-border rounded-lg px-4 py-2 text-kob-text focus:outline-none focus:ring-2 focus:ring-kob-accent"
+          className="input w-full md:w-64"
         >
           <option value="">All Accounts</option>
           {accounts?.map((account) => (
@@ -51,82 +79,87 @@ export default function TradeHistoryPage() {
             Loading trade history...
           </div>
         ) : !history || history.length === 0 ? (
-          <div className="text-center py-12 text-kob-text-dim">
-            No trade history found
+          <div className="text-center py-16">
+            <TrendingUp size={64} className="mx-auto text-kob-text-dim mb-4 opacity-50" />
+            <p className="text-xl text-kob-text mb-2">No trade history found</p>
+            <p className="text-sm text-kob-text-dim">Completed trades will appear here</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-kob-bg-tertiary border-b border-kob-border">
+              <thead className="bg-kob-crimson/30 border-b border-kob-border">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-kob-text-dim uppercase tracking-wider">
-                    Exit Time
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-kob-text uppercase tracking-wider">
+                    Exit Time (Lagos)
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-kob-text-dim uppercase tracking-wider">
-                    Signal ID
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-kob-text uppercase tracking-wider">
+                    Channel
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Symbol
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Direction
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Entry
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Exit
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Lots
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-kob-text uppercase tracking-wider">
                     P&L (USD)
                   </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-kob-text-dim uppercase tracking-wider">
-                    Outcome
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-kob-text uppercase tracking-wider">
+                    Result
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-kob-text-dim uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-kob-text uppercase tracking-wider">
                     Close Reason
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-kob-border">
                 {history.map((trade: TradeHistory) => (
-                  <tr key={trade.history_id} className="hover:bg-kob-bg-secondary transition-colors">
+                  <tr key={trade.history_id} className="hover:bg-kob-crimson/10 transition-colors">
                     <td className="px-4 py-3 text-sm text-kob-text whitespace-nowrap">
-                      {format(new Date(trade.exit_time), 'MMM dd, HH:mm')}
+                      {formatLagosTime(trade.exit_time)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-kob-text-dim">
-                      {trade.signal_id}
-                      {trade.sub_signal_id && (
-                        <span className="text-xs ml-1">({trade.sub_signal_id})</span>
+                    <td className="px-4 py-3 text-sm">
+                      {trade.channel_name ? (
+                        <span className="px-2 py-1 rounded bg-kob-crimson/30 text-kob-text text-xs">
+                          {trade.channel_name}
+                        </span>
+                      ) : (
+                        <span className="text-kob-text-dim text-xs">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm font-medium text-kob-text">
+                    <td className="px-4 py-3 text-sm font-semibold text-kob-text">
                       {trade.symbol}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold ${
                           trade.direction === 'BUY'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
+                            ? 'bg-green-900/30 text-green-400'
+                            : 'bg-red-900/30 text-red-400'
                         }`}
                       >
                         {trade.direction}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-kob-text text-right">
+                    <td className="px-4 py-3 text-sm text-kob-text text-right font-mono">
                       {trade.entry_price.toFixed(5)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-kob-text text-right">
+                    <td className="px-4 py-3 text-sm text-kob-text text-right font-mono">
                       {trade.exit_price.toFixed(5)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-kob-text text-right">
+                    <td className="px-4 py-3 text-sm text-kob-text text-right font-mono">
                       {trade.lot_size.toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">
+                    <td className="px-4 py-3 text-sm text-right font-bold font-mono">
                       <span
                         className={
                           trade.pnl > 0
@@ -141,19 +174,28 @@ export default function TradeHistoryPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-center">
                       <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold ${
                           trade.outcome === 'WIN'
-                            ? 'bg-green-500/20 text-green-400'
+                            ? 'bg-green-900/30 text-green-400'
                             : trade.outcome === 'LOSS'
-                            ? 'bg-red-500/20 text-red-400'
-                            : 'bg-gray-500/20 text-gray-400'
+                            ? 'bg-red-900/30 text-red-400'
+                            : 'bg-gray-900/30 text-gray-400'
                         }`}
                       >
                         {trade.outcome}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-kob-text-dim">
-                      {trade.close_reason.replace(/_/g, ' ')}
+                      <div>
+                        {trade.close_reason.replace(/_/g, ' ')}
+                      </div>
+                      {trade.manual_action_type && (
+                        <div className="mt-1">
+                          <span className="px-2 py-0.5 rounded text-xs bg-blue-900/30 text-blue-400">
+                            Manual: {trade.manual_action_type.replace('MANUAL_', '')}
+                          </span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -165,32 +207,40 @@ export default function TradeHistoryPage() {
       
       {/* Summary Stats */}
       {history && history.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="card">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="card bg-gradient-to-br from-kob-base to-kob-app">
             <div className="text-sm text-kob-text-dim mb-1">Total Trades</div>
-            <div className="text-2xl font-bold text-kob-text">{history.length}</div>
+            <div className="text-3xl font-bold text-kob-text">{history.length}</div>
           </div>
-          <div className="card">
+          <div className="card bg-gradient-to-br from-green-900/20 to-kob-base">
             <div className="text-sm text-kob-text-dim mb-1">Winners</div>
-            <div className="text-2xl font-bold text-green-400">
+            <div className="text-3xl font-bold text-green-400">
               {history.filter((t: TradeHistory) => t.outcome === 'WIN').length}
             </div>
+            <div className="text-xs text-kob-text-dim mt-1">
+              {((history.filter((t: TradeHistory) => t.outcome === 'WIN').length / history.length) * 100).toFixed(1)}% win rate
+            </div>
           </div>
-          <div className="card">
+          <div className="card bg-gradient-to-br from-red-900/20 to-kob-base">
             <div className="text-sm text-kob-text-dim mb-1">Losers</div>
-            <div className="text-2xl font-bold text-red-400">
+            <div className="text-3xl font-bold text-red-400">
               {history.filter((t: TradeHistory) => t.outcome === 'LOSS').length}
             </div>
           </div>
-          <div className="card">
+          <div className={`card bg-gradient-to-br ${
+            history.reduce((sum: number, t: TradeHistory) => sum + t.pnl, 0) > 0
+              ? 'from-green-900/20 to-kob-base'
+              : 'from-red-900/20 to-kob-base'
+          }`}>
             <div className="text-sm text-kob-text-dim mb-1">Total P&L</div>
             <div
-              className={`text-2xl font-bold ${
+              className={`text-3xl font-bold ${
                 history.reduce((sum: number, t: TradeHistory) => sum + t.pnl, 0) > 0
                   ? 'text-green-400'
                   : 'text-red-400'
               }`}
             >
+              {history.reduce((sum: number, t: TradeHistory) => sum + t.pnl, 0) > 0 ? '+' : ''}
               ${history.reduce((sum: number, t: TradeHistory) => sum + t.pnl, 0).toFixed(2)}
             </div>
           </div>
@@ -199,4 +249,3 @@ export default function TradeHistoryPage() {
     </div>
   )
 }
-

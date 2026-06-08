@@ -54,6 +54,7 @@ export interface ActiveTrade {
   trade_id: number
   account_key: string
   channel_id: number
+  channel_name: string | null
   signal_id: string
   sub_signal_id: string | null
   symbol: string
@@ -74,6 +75,7 @@ export interface TradeHistory {
   history_id: number
   account_key: string
   channel_id: number
+  channel_name: string | null
   signal_id: string
   sub_signal_id: string | null
   symbol: string
@@ -88,6 +90,19 @@ export interface TradeHistory {
   pnl: number
   outcome: string
   close_reason: string
+  manual_action_type: string | null
+}
+
+export interface Notification {
+  notification_id: number
+  account_key: string | null
+  category: string
+  severity: string
+  title: string
+  message: string
+  metadata: any
+  read: boolean
+  created_at: string
 }
 
 export interface BotStatus {
