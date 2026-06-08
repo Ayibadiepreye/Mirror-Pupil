@@ -298,10 +298,28 @@ class TradeExecutor:
             
             # Step 5: Validate trade with risk enforcer (now that we have instrument)
             if self.risk_enforcer and signal.sl:
+                # For market orders (entry_price=None), fetch current market price for risk calculation
+                entry_price_for_risk = signal.entry_price
+                if entry_price_for_risk is None or entry_price_for_risk == 0.0:
+                    # Market order - fetch current price
+                    current_market_price = await client.get_market_price(signal.symbol)
+                    if current_market_price and current_market_price > 0:
+                        entry_price_for_risk = current_market_price
+                        logger.info(
+                            f"[{account_key}] Market order - using current price {current_market_price:.5f} "
+                            f"for risk calculation"
+                        )
+                    else:
+                        logger.warning(
+                            f"[{account_key}] Could not fetch market price for {signal.symbol}, "
+                            f"risk calculation may be inaccurate"
+                        )
+                        entry_price_for_risk = 0.0
+                
                 validation = await self.risk_enforcer.validate_trade(
                     account=account_db,
                     profile=profile,
-                    entry_price=signal.entry_price or 0.0,  # Will be filled at market
+                    entry_price=entry_price_for_risk,
                     sl_price=signal.sl,
                     lot_size=self.default_lot_size,
                     symbol=signal.symbol,
