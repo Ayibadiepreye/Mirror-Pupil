@@ -417,6 +417,43 @@ class TradeExecutor:
                 status = "pending"
                 fill_price = signal.entry_price or 0.0
             
+            # CRITICAL: For filled market orders with no fill_price, fetch from position
+            if status == "filled" and fill_price == 0.0 and position_id:
+                try:
+                    logger.debug(
+                        f"[{account_key}] Market order filled but no price - "
+                        f"fetching from position {position_id}"
+                    )
+                    all_positions = await client.get_all_positions()
+                    position_info = next(
+                        (p for p in all_positions if p.get('id') == position_id),
+                        None
+                    )
+                    if position_info:
+                        # Get open price from position
+                        fill_price = float(position_info.get('openPrice', 0.0))
+                        if fill_price > 0:
+                            logger.info(
+                                f"[{account_key}] ✓ Fetched fill price from position: {fill_price}"
+                            )
+                        else:
+                            # Fallback to market price
+                            market_price = await client.get_market_price(signal.symbol)
+                            fill_price = market_price if market_price else 0.0
+                            logger.warning(
+                                f"[{account_key}] Using market price as fill price: {fill_price}"
+                            )
+                except Exception as e:
+                    logger.error(
+                        f"[{account_key}] Failed to fetch fill price from position: {e}"
+                    )
+                    # Last resort: use current market price
+                    try:
+                        market_price = await client.get_market_price(signal.symbol)
+                        fill_price = market_price if market_price else 0.0
+                    except Exception:
+                        pass
+            
             logger.info(
                 f"[{account_key}] ✓ Order placed: ID={order_id}, "
                 f"Position={position_id}, Status={status}, Price={fill_price}"
