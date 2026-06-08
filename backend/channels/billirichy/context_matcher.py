@@ -46,7 +46,9 @@ class BillirichyContextMatcher:
         symbol: Optional[str],
         direction: Optional[str],
         text: str,
-        account_key: str
+        account_key: str,
+        action: str = None,
+        client = None
     ) -> List[ActiveTrade]:
         """
         Match management message to active trades using 8-level algorithm.
@@ -57,6 +59,8 @@ class BillirichyContextMatcher:
             direction: Extracted direction from text
             text: Full message text
             account_key: Account to match trades for
+            action: Management action type (for compatibility with Firepips matcher)
+            client: TradeLocker client (for compatibility with Firepips matcher)
         
         Returns:
             List of matching ActiveTrade objects
