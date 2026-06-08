@@ -189,7 +189,7 @@ class EODCloseHandler:
                     continue
                 
                 # Close filled position on TradeLocker
-                await tl_client.close_position(trade.tl_position_id)
+                await tl_client.close_position(int(trade.tl_position_id))
                 
                 # Get actual exit price from closed position
                 try:

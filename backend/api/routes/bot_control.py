@@ -149,7 +149,7 @@ async def force_close_all_positions(
                     
                     if client and trade.tl_position_id:
                         # Close position
-                        await client['client'].close_position(trade.tl_position_id)
+                        await client['client'].close_position(int(trade.tl_position_id))
                         
                         # Mark as closed in database
                         await db.close_trade(
@@ -204,7 +204,7 @@ async def force_close_account_positions(
             try:
                 if client and trade.tl_position_id:
                     # Close position
-                    await client['client'].close_position(trade.tl_position_id)
+                    await client['client'].close_position(int(trade.tl_position_id))
                     
                     # Mark as closed in database
                     await db.close_trade(

@@ -196,7 +196,7 @@ class TrailingStopUpdater:
             
             # Update SL via TradeLocker API
             await tl_client.modify_position(
-                position_id=trade.tl_position_id,
+                position_id=int(trade.tl_position_id),
                 stop_loss=new_sl
             )
             

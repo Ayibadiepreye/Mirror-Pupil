@@ -858,7 +858,7 @@ class TradeExecutor:
             # BREAKEVEN
             if action == 'BREAKEVEN':
                 await client.modify_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     stop_loss=trade.entry_price
                 )
                 await self.db.update_trade_sl(trade.trade_id, trade.entry_price)
@@ -869,7 +869,7 @@ class TradeExecutor:
             
             # CLOSE_ALL or IMPLIED_CLOSE
             elif action in ['CLOSE_ALL', 'IMPLIED_CLOSE']:
-                await client.close_position(position_id=trade.tl_position_id)
+                await client.close_position(position_id=int(trade.tl_position_id))
                 
                 # Get exit price
                 try:
@@ -922,7 +922,7 @@ class TradeExecutor:
                 qty_to_close = round(trade.lot_size * close_pct, 2)
                 
                 await client.close_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     quantity=qty_to_close
                 )
                 
@@ -973,7 +973,7 @@ class TradeExecutor:
                     logger.warning(f"[{account_key}] Could not validate SL direction: {e}")
                 
                 await client.modify_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     stop_loss=new_sl
                 )
                 await self.db.update_trade_sl(trade.trade_id, new_sl)
@@ -1015,7 +1015,7 @@ class TradeExecutor:
                     logger.warning(f"[{account_key}] Could not validate TP direction: {e}")
                 
                 await client.modify_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     take_profit=new_tp
                 )
                 await self.db.update_trade_tp(trade.trade_id, new_tp)
@@ -1030,7 +1030,7 @@ class TradeExecutor:
                 # Close 33%
                 qty_to_close = round(trade.lot_size * 0.33, 2)
                 await client.close_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     quantity=qty_to_close
                 )
                 new_lot_size = trade.lot_size - qty_to_close
@@ -1038,7 +1038,7 @@ class TradeExecutor:
                 
                 # Set breakeven
                 await client.modify_position(
-                    position_id=trade.tl_position_id,
+                    position_id=int(trade.tl_position_id),
                     stop_loss=trade.entry_price
                 )
                 await self.db.update_trade_sl(trade.trade_id, trade.entry_price)

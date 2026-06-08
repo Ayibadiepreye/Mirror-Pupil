@@ -127,7 +127,7 @@ class FirepipsAutonomousManager:
             
             # Modify SL to entry price
             await tl_client.modify_position(
-                position_id=trade.tl_position_id,
+                position_id=int(trade.tl_position_id),
                 stop_loss=trade.entry_price
             )
             
@@ -157,7 +157,7 @@ class FirepipsAutonomousManager:
             
             # Close partial position
             await tl_client.close_position(
-                position_id=trade.tl_position_id,
+                position_id=int(trade.tl_position_id),
                 quantity=qty
             )
             
@@ -182,7 +182,7 @@ class FirepipsAutonomousManager:
                 return
             
             # Close full position
-            await tl_client.close_position(trade.tl_position_id)
+            await tl_client.close_position(int(trade.tl_position_id))
             
             # Get actual exit price from closed position
             try:
