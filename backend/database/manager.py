@@ -1216,3 +1216,473 @@ async def get_db() -> DatabaseManager:
         await _db_manager.connect()
     return _db_manager
 
+
+    
+    # ==================== NOTIFICATION QUERIES ====================
+    
+    async def add_notification(
+        self,
+        account_key: Optional[str],
+        category: str,
+        severity: str,
+        title: str,
+        message: str,
+        metadata: Optional[Dict] = None
+    ) -> Optional[int]:
+        """Add a new notification. Returns notification_id."""
+        try:
+            async with self.pool.acquire() as conn:
+                notification_id = await conn.fetchval(
+                    """
+                    INSERT INTO notifications (
+                        account_key, category, severity, title, message, metadata
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING notification_id
+                    """,
+                    account_key, category, severity, title, message, metadata
+                )
+                logger.debug(f"✓ Added notification: {title}")
+                return notification_id
+        except Exception as e:
+            logger.error(f"Failed to add notification: {e}")
+            return None
+    
+    async def get_notifications(
+        self,
+        account_key: Optional[str] = None,
+        unread_only: bool = False,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Get notifications with optional filtering."""
+        try:
+            async with self.pool.acquire() as conn:
+                if account_key:
+                    if unread_only:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM notifications
+                            WHERE account_key = $1 AND read = FALSE
+                            ORDER BY created_at DESC
+                            LIMIT $2
+                            """,
+                            account_key, limit
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM notifications
+                            WHERE account_key = $1
+                            ORDER BY created_at DESC
+                            LIMIT $2
+                            """,
+                            account_key, limit
+                        )
+                else:
+                    if unread_only:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM notifications
+                            WHERE read = FALSE
+                            ORDER BY created_at DESC
+                            LIMIT $1
+                            """,
+                            limit
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM notifications
+                            ORDER BY created_at DESC
+                            LIMIT $1
+                            """,
+                            limit
+                        )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get notifications: {e}")
+            return []
+    
+    async def get_notification(self, notification_id: int) -> Optional[Dict]:
+        """Get a single notification by ID."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM notifications WHERE notification_id = $1",
+                    notification_id
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get notification {notification_id}: {e}")
+            return None
+    
+    async def mark_notification_read(self, notification_id: int, read: bool) -> bool:
+        """Mark a notification as read or unread."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE notifications SET read = $1 WHERE notification_id = $2",
+                    read, notification_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to mark notification as read: {e}")
+            return False
+    
+    async def mark_all_notifications_read(self, account_key: Optional[str] = None) -> int:
+        """Mark all notifications as read. Returns count of updated notifications."""
+        try:
+            async with self.pool.acquire() as conn:
+                if account_key:
+                    result = await conn.execute(
+                        "UPDATE notifications SET read = TRUE WHERE account_key = $1 AND read = FALSE",
+                        account_key
+                    )
+                else:
+                    result = await conn.execute(
+                        "UPDATE notifications SET read = TRUE WHERE read = FALSE"
+                    )
+                # Extract count from result string like "UPDATE 5"
+                count = int(result.split()[-1]) if result else 0
+                logger.info(f"✓ Marked {count} notification(s) as read")
+                return count
+        except Exception as e:
+            logger.error(f"Failed to mark all notifications as read: {e}")
+            return 0
+    
+    async def delete_notification(self, notification_id: int) -> bool:
+        """Delete a notification."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM notifications WHERE notification_id = $1",
+                    notification_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete notification: {e}")
+            return False
+    
+    async def cleanup_old_notifications(self) -> int:
+        """Delete notifications older than 48 hours. Returns count of deleted notifications."""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM notifications WHERE created_at < NOW() - INTERVAL '48 hours'"
+                )
+                count = int(result.split()[-1]) if result else 0
+                if count > 0:
+                    logger.info(f"✓ Cleaned up {count} old notification(s)")
+                return count
+        except Exception as e:
+            logger.error(f"Failed to cleanup old notifications: {e}")
+            return 0
+    
+    # ==================== MANUAL ACTION QUERIES ====================
+    
+    async def add_manual_action(
+        self,
+        account_key: str,
+        trade_id: Optional[int],
+        action_type: str,
+        action_data: Optional[Dict] = None
+    ) -> Optional[int]:
+        """Add a manual action audit record. Returns action_id."""
+        try:
+            async with self.pool.acquire() as conn:
+                action_id = await conn.fetchval(
+                    """
+                    INSERT INTO manual_actions (
+                        account_key, trade_id, action_type, action_data
+                    ) VALUES ($1, $2, $3, $4)
+                    RETURNING action_id
+                    """,
+                    account_key, trade_id, action_type, action_data
+                )
+                logger.debug(f"✓ Logged manual action: {action_type}")
+                return action_id
+        except Exception as e:
+            logger.error(f"Failed to add manual action: {e}")
+            return None
+    
+    async def get_manual_actions(
+        self,
+        account_key: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Get manual action history."""
+        try:
+            async with self.pool.acquire() as conn:
+                if account_key:
+                    rows = await conn.fetch(
+                        """
+                        SELECT * FROM manual_actions
+                        WHERE account_key = $1
+                        ORDER BY performed_at DESC
+                        LIMIT $2
+                        """,
+                        account_key, limit
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """
+                        SELECT * FROM manual_actions
+                        ORDER BY performed_at DESC
+                        LIMIT $1
+                        """,
+                        limit
+                    )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get manual actions: {e}")
+            return []
+    
+    # ==================== HELPER METHODS FOR NEW FEATURES ====================
+    
+    async def get_active_trade_by_id(self, trade_id: int) -> Optional[ActiveTrade]:
+        """Get a single active trade by ID."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM active_trades WHERE trade_id = $1",
+                    trade_id
+                )
+                return ActiveTrade(**dict(row)) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get active trade {trade_id}: {e}")
+            return None
+    
+    async def update_channel(self, channel_id: int, **kwargs) -> bool:
+        """Update channel with flexible field updates."""
+        if not kwargs:
+            return False
+        
+        try:
+            set_clauses = []
+            values = []
+            param_num = 1
+            
+            for field, value in kwargs.items():
+                set_clauses.append(f"{field} = ${param_num}")
+                values.append(value)
+                param_num += 1
+            
+            values.append(channel_id)
+            query = f"""
+                UPDATE channels
+                SET {', '.join(set_clauses)}
+                WHERE channel_id = ${param_num}
+            """
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *values)
+                logger.debug(f"✓ Updated channel {channel_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update channel: {e}")
+            return False
+    
+    async def update_risk_profile(self, profile_id: int, **kwargs) -> bool:
+        """Update risk profile with flexible field updates."""
+        if not kwargs:
+            return False
+        
+        try:
+            set_clauses = []
+            values = []
+            param_num = 1
+            
+            for field, value in kwargs.items():
+                set_clauses.append(f"{field} = ${param_num}")
+                values.append(value)
+                param_num += 1
+            
+            values.append(profile_id)
+            query = f"""
+                UPDATE risk_profiles
+                SET {', '.join(set_clauses)}
+                WHERE profile_id = ${param_num}
+            """
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(query, *values)
+                logger.debug(f"✓ Updated risk profile {profile_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update risk profile: {e}")
+            return False
+    
+    async def update_trade_sl(self, trade_id: int, new_sl: float) -> bool:
+        """Update SL for an active trade."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET sl = $1 WHERE trade_id = $2",
+                    new_sl, trade_id
+                )
+                logger.debug(f"✓ Updated SL for trade {trade_id}: {new_sl}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update trade SL: {e}")
+            return False
+    
+    async def move_trade_to_history(
+        self,
+        trade_id: int,
+        exit_price: float,
+        pnl: float,
+        outcome: str,
+        close_reason: str,
+        manual_action_type: Optional[str] = None
+    ) -> bool:
+        """Move trade from active_trades to trade_history."""
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    # Get trade
+                    trade = await conn.fetchrow(
+                        "SELECT * FROM active_trades WHERE trade_id = $1", trade_id
+                    )
+                    
+                    if not trade:
+                        logger.error(f"Trade {trade_id} not found")
+                        return False
+                    
+                    # Insert into history
+                    await conn.execute(
+                        """
+                        INSERT INTO trade_history (
+                            account_key, channel_id, channel_name, signal_id, sub_signal_id,
+                            symbol, direction, entry_price, exit_price, sl, tp, lot_size,
+                            entry_time, pnl, outcome, close_reason, manual_action_type
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                        """,
+                        trade['account_key'], trade['channel_id'], trade.get('channel_name'),
+                        trade['signal_id'], trade['sub_signal_id'], trade['symbol'],
+                        trade['direction'], trade['entry_price'], exit_price, trade['sl'],
+                        trade['tp'], trade['lot_size'], trade['entry_time'], pnl, outcome,
+                        close_reason, manual_action_type
+                    )
+                    
+                    # Delete from active trades
+                    await conn.execute(
+                        "DELETE FROM active_trades WHERE trade_id = $1", trade_id
+                    )
+                    
+                    logger.info(f"✓ Moved trade {trade_id} to history (P&L: ${pnl:.2f})")
+                    return True
+        except Exception as e:
+            logger.error(f"Failed to move trade to history: {e}")
+            return False
+    
+    async def delete_channel(self, channel_id: int) -> bool:
+        """Delete a channel."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM channels WHERE channel_id = $1",
+                    channel_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete channel: {e}")
+            return False
+    
+    async def delete_risk_profile(self, profile_id: int) -> bool:
+        """Delete a risk profile (only if not default and not in use)."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Check if default
+                is_default = await conn.fetchval(
+                    "SELECT is_default FROM risk_profiles WHERE profile_id = $1",
+                    profile_id
+                )
+                
+                if is_default:
+                    logger.warning(f"Cannot delete default risk profile {profile_id}")
+                    return False
+                
+                # Check if in use
+                in_use = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM accounts WHERE risk_profile_id = $1)",
+                    profile_id
+                )
+                
+                if in_use:
+                    logger.warning(f"Cannot delete risk profile {profile_id}: in use by accounts")
+                    return False
+                
+                # Delete
+                await conn.execute(
+                    "DELETE FROM risk_profiles WHERE profile_id = $1",
+                    profile_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete risk profile: {e}")
+            return False
+    
+    async def delete_account(self, account_key: str) -> bool:
+        """Delete an account and all related data."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM accounts WHERE account_key = $1",
+                    account_key
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete account: {e}")
+            return False
+    
+    async def add_risk_profile(self, profile: RiskProfile) -> Optional[int]:
+        """Add a new risk profile. Returns profile_id."""
+        try:
+            async with self.pool.acquire() as conn:
+                profile_id = await conn.fetchval(
+                    """
+                    INSERT INTO risk_profiles (
+                        profile_name, is_default, max_risk_per_trade_pct, daily_loss_pct,
+                        daily_trailing, overall_loss_pct, overall_trailing,
+                        overall_trail_from_closed_balance, profit_lock_pct, profit_lock_floor_pct,
+                        payout_buffer_pct, max_concurrent_trades, commission_per_lot,
+                        safety_buffer_pct, notes
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    RETURNING profile_id
+                    """,
+                    profile.profile_name, profile.is_default, profile.max_risk_per_trade_pct,
+                    profile.daily_loss_pct, profile.daily_trailing, profile.overall_loss_pct,
+                    profile.overall_trailing, profile.overall_trail_from_closed_balance,
+                    profile.profit_lock_pct, profile.profit_lock_floor_pct,
+                    profile.payout_buffer_pct, profile.max_concurrent_trades,
+                    profile.commission_per_lot, profile.safety_buffer_pct, profile.notes
+                )
+                logger.info(f"✓ Added risk profile: {profile.profile_name} (ID: {profile_id})")
+                return profile_id
+        except Exception as e:
+            logger.error(f"Failed to add risk profile: {e}")
+            return None
+    
+    async def reset_payout_after_withdrawal(self, account_key: str, new_balance: float) -> bool:
+        """Reset account balances after payout withdrawal."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE accounts
+                    SET current_balance = $1,
+                        initial_balance = $1,
+                        highest_banked_balance = $1,
+                        daily_start_balance = $1,
+                        last_synced_balance = $1,
+                        daily_pnl = 0,
+                        cycle_best_day_pnl = 0,
+                        profit_locked = FALSE
+                    WHERE account_key = $2
+                    """,
+                    new_balance, account_key
+                )
+                logger.info(f"✓ Reset payout for {account_key}: new balance ${new_balance:.2f}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to reset payout: {e}")
+            return False

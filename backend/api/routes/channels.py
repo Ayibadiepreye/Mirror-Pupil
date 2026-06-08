@@ -241,20 +241,25 @@ async def update_channel(
                 detail=f"Channel not found: {channel_id}"
             )
         
-        # Update fields (keep existing if not provided)
-        updated_channel = Channel(
-            channel_id=channel_id,
-            display_name=channel_data.display_name or existing.display_name,
-            signal_prefix=channel_data.signal_prefix or existing.signal_prefix,
-            entry_logic_module=channel_data.entry_logic_module or existing.entry_logic_module,
-            management_logic_module=channel_data.management_logic_module or existing.management_logic_module,
-            priority=channel_data.priority if channel_data.priority is not None else existing.priority,
-            enabled=channel_data.enabled if channel_data.enabled is not None else existing.enabled,
-            notes=channel_data.notes if channel_data.notes is not None else existing.notes
-        )
+        # Build update dict with only provided fields
+        updates = {}
+        if channel_data.display_name is not None:
+            updates['display_name'] = channel_data.display_name
+        if channel_data.signal_prefix is not None:
+            updates['signal_prefix'] = channel_data.signal_prefix
+        if channel_data.entry_logic_module is not None:
+            updates['entry_logic_module'] = channel_data.entry_logic_module
+        if channel_data.management_logic_module is not None:
+            updates['management_logic_module'] = channel_data.management_logic_module
+        if channel_data.priority is not None:
+            updates['priority'] = channel_data.priority
+        if channel_data.enabled is not None:
+            updates['enabled'] = channel_data.enabled
+        if channel_data.notes is not None:
+            updates['notes'] = channel_data.notes
         
         # Update in database
-        success = await db.update_channel(channel_id, updated_channel)
+        success = await db.update_channel(channel_id, **updates)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -274,6 +279,26 @@ async def update_channel(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update channel: {str(e)}"
         )
+
+
+@router.patch("/{channel_id}", response_model=ChannelResponse)
+async def patch_channel(
+    channel_id: int,
+    channel_data: ChannelUpdate,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Partially update a channel (PATCH endpoint).
+    Same as PUT but more explicit about partial updates.
+    
+    Args:
+        channel_id: Channel ID
+        channel_data: Channel update data
+    
+    Returns:
+        Updated channel details
+    """
+    return await update_channel(channel_id, channel_data, db)
 
 
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)

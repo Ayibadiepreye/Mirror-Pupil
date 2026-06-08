@@ -198,28 +198,41 @@ async def update_risk_profile(
                 detail=f"Risk profile not found: {profile_id}"
             )
         
-        # Update fields (keep existing if not provided)
-        updated_profile = RiskProfile(
-            profile_id=profile_id,
-            profile_name=profile_data.profile_name or existing.profile_name,
-            is_default=profile_data.is_default if profile_data.is_default is not None else existing.is_default,
-            max_risk_per_trade_pct=profile_data.max_risk_per_trade_pct or existing.max_risk_per_trade_pct,
-            daily_loss_pct=profile_data.daily_loss_pct or existing.daily_loss_pct,
-            daily_trailing=profile_data.daily_trailing if profile_data.daily_trailing is not None else existing.daily_trailing,
-            overall_loss_pct=profile_data.overall_loss_pct or existing.overall_loss_pct,
-            overall_trailing=profile_data.overall_trailing if profile_data.overall_trailing is not None else existing.overall_trailing,
-            overall_trail_from_closed_balance=profile_data.overall_trail_from_closed_balance if profile_data.overall_trail_from_closed_balance is not None else existing.overall_trail_from_closed_balance,
-            profit_lock_pct=profile_data.profit_lock_pct if profile_data.profit_lock_pct is not None else existing.profit_lock_pct,
-            profit_lock_floor_pct=profile_data.profit_lock_floor_pct if profile_data.profit_lock_floor_pct is not None else existing.profit_lock_floor_pct,
-            payout_buffer_pct=profile_data.payout_buffer_pct or existing.payout_buffer_pct,
-            max_concurrent_trades=profile_data.max_concurrent_trades or existing.max_concurrent_trades,
-            commission_per_lot=profile_data.commission_per_lot or existing.commission_per_lot,
-            safety_buffer_pct=profile_data.safety_buffer_pct or existing.safety_buffer_pct,
-            notes=profile_data.notes if profile_data.notes is not None else existing.notes
-        )
+        # Build update dict with only provided fields
+        updates = {}
+        if profile_data.profile_name is not None:
+            updates['profile_name'] = profile_data.profile_name
+        if profile_data.is_default is not None:
+            updates['is_default'] = profile_data.is_default
+        if profile_data.max_risk_per_trade_pct is not None:
+            updates['max_risk_per_trade_pct'] = profile_data.max_risk_per_trade_pct
+        if profile_data.daily_loss_pct is not None:
+            updates['daily_loss_pct'] = profile_data.daily_loss_pct
+        if profile_data.daily_trailing is not None:
+            updates['daily_trailing'] = profile_data.daily_trailing
+        if profile_data.overall_loss_pct is not None:
+            updates['overall_loss_pct'] = profile_data.overall_loss_pct
+        if profile_data.overall_trailing is not None:
+            updates['overall_trailing'] = profile_data.overall_trailing
+        if profile_data.overall_trail_from_closed_balance is not None:
+            updates['overall_trail_from_closed_balance'] = profile_data.overall_trail_from_closed_balance
+        if profile_data.profit_lock_pct is not None:
+            updates['profit_lock_pct'] = profile_data.profit_lock_pct
+        if profile_data.profit_lock_floor_pct is not None:
+            updates['profit_lock_floor_pct'] = profile_data.profit_lock_floor_pct
+        if profile_data.payout_buffer_pct is not None:
+            updates['payout_buffer_pct'] = profile_data.payout_buffer_pct
+        if profile_data.max_concurrent_trades is not None:
+            updates['max_concurrent_trades'] = profile_data.max_concurrent_trades
+        if profile_data.commission_per_lot is not None:
+            updates['commission_per_lot'] = profile_data.commission_per_lot
+        if profile_data.safety_buffer_pct is not None:
+            updates['safety_buffer_pct'] = profile_data.safety_buffer_pct
+        if profile_data.notes is not None:
+            updates['notes'] = profile_data.notes
         
         # Update in database
-        success = await db.update_risk_profile(profile_id, updated_profile)
+        success = await db.update_risk_profile(profile_id, **updates)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -239,6 +252,19 @@ async def update_risk_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update risk profile: {str(e)}"
         )
+
+
+@router.patch("/{profile_id}", response_model=RiskProfileResponse)
+async def patch_risk_profile(
+    profile_id: int,
+    profile_data: RiskProfileUpdate,
+    db: DatabaseManager = Depends(get_db)
+):
+    """
+    Partially update a risk profile (PATCH endpoint).
+    Same as PUT but more explicit about partial updates.
+    """
+    return await update_risk_profile(profile_id, profile_data, db)
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
