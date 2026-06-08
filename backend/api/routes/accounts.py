@@ -34,6 +34,7 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     """Request model for updating an account."""
     display_name: Optional[str] = None
+    lot_size_override: Optional[float] = None
     paused: Optional[bool] = None
     risk_profile_id: Optional[int] = None
     max_concurrent_trades_override: Optional[int] = None
@@ -452,16 +453,19 @@ async def update_account(
         
         # Update fields
         if account_data.display_name is not None:
-            await db.update_account_display_name(account_key, account_data.display_name)
+            await db.update_account(account_key, display_name=account_data.display_name)
+        
+        if account_data.lot_size_override is not None:
+            await db.update_account(account_key, lot_size_override=account_data.lot_size_override)
         
         if account_data.paused is not None:
             await db.update_account_paused(account_key, account_data.paused)
         
         if account_data.risk_profile_id is not None:
-            await db.update_account_risk_profile(account_key, account_data.risk_profile_id)
+            await db.update_account(account_key, risk_profile_id=account_data.risk_profile_id)
         
         if account_data.max_concurrent_trades_override is not None:
-            await db.update_account_max_concurrent(account_key, account_data.max_concurrent_trades_override)
+            await db.update_account(account_key, max_concurrent_trades_override=account_data.max_concurrent_trades_override)
         
         # Get updated account
         updated_account = await db.get_account(account_key)
