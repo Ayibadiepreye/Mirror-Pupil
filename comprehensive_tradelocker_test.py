@@ -956,6 +956,9 @@ class ComprehensiveTradeLockerTest:
         logger.info("="*60)
         logger.warning("⚠ This will place REAL orders on demo account")
         
+        # Reinitialize test_positions for live order tests (previous tests may have populated it with API positions)
+        self.test_positions = []
+        
         # Test 10.1: Get current market price
         try:
             market_price = await self.client.get_market_price("EURUSD")
