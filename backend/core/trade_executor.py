@@ -436,26 +436,81 @@ class TradeExecutor:
                 # If position_id is None for a FILLED market order, fetch it from TradeLocker
                 if position_id is None and status == "filled" and type_ == "market":
                     try:
-                        logger.debug(f"[{account_key}] Fetching position_id for order {order_id}")
-                        await asyncio.sleep(0.5)  # Wait for position to settle
+                        logger.debug(f"[{account_key}] Resolving position_id for order {order_id}")
                         
-                        positions = await client.get_all_positions()
-                        
-                        # Find position matching this instrument (most recent one)
-                        for pos in positions:
-                            pos_instrument_id = pos.get('tradableInstrumentId')
-                            if pos_instrument_id == instrument_id:
-                                position_id = pos.get('id')
-                                if position_id:
-                                    # Update database with actual position_id
+                        # PRIMARY METHOD: Use SDK's built-in order→position lookup
+                        # This is the most reliable method for multi-position scenarios
+                        for attempt in range(10):  # Retry up to 5 seconds (10 × 0.5s)
+                            try:
+                                position_id = await client.get_position_id_from_order_id(order_id)
+                                
+                                if position_id is not None:
                                     await self.db.update_trade_position_id(trade_id, str(position_id))
                                     logger.info(
-                                        f"[{account_key}] ✓ Updated trade {trade_id} with position_id: {position_id}"
+                                        f"[{account_key}] ✓ Resolved position_id {position_id} "
+                                        f"for order {order_id} (attempt {attempt + 1})"
                                     )
                                     break
+                            except Exception as e:
+                                logger.warning(
+                                    f"[{account_key}] Order→position lookup attempt {attempt + 1} failed: {e}"
+                                )
+                                position_id = None
+                            
+                            if position_id is not None:
+                                break
+                            
+                            await asyncio.sleep(0.5)  # Wait before retry
+                        
+                        # FALLBACK METHOD: Scan positions (only if primary method failed)
+                        if position_id is None:
+                            logger.warning(
+                                f"[{account_key}] Primary lookup failed, falling back to position scan"
+                            )
+                            
+                            positions = await client.get_all_positions()
+                            
+                            # Get existing position IDs to exclude
+                            active_trades_list = await self.db.get_active_trades(account_key)
+                            existing_ids = {
+                                str(t.tl_position_id) 
+                                for t in active_trades_list 
+                                if t.tl_position_id and t.trade_id != trade_id
+                            }
+                            
+                            # Find candidates: matching instrument, not already tracked, matching side
+                            candidates = [
+                                p for p in positions
+                                if p.get('tradableInstrumentId') == instrument_id
+                                and str(p.get('id')) not in existing_ids
+                                and p.get('side', '').lower() == side.lower()
+                            ]
+                            
+                            if len(candidates) == 1:
+                                # Exactly one match - safe to use
+                                position_id = candidates[0].get('id')
+                                await self.db.update_trade_position_id(trade_id, str(position_id))
+                                logger.info(
+                                    f"[{account_key}] ✓ Matched position_id {position_id} "
+                                    f"by instrument+side (fallback method)"
+                                )
+                            elif len(candidates) > 1:
+                                # Ambiguous - DO NOT GUESS
+                                logger.error(
+                                    f"[{account_key}] ❌ CRITICAL: Cannot resolve position_id for order {order_id}. "
+                                    f"Found {len(candidates)} candidates for {signal.symbol} {side}. "
+                                    f"Manual review required. Trade ID: {trade_id}"
+                                )
+                            else:
+                                # No candidates found
+                                logger.error(
+                                    f"[{account_key}] ❌ No position found for order {order_id}. "
+                                    f"Instrument: {instrument_id}, Side: {side}. Trade ID: {trade_id}"
+                                )
+                                
                     except Exception as e:
                         logger.error(
-                            f"[{account_key}] Failed to fetch position_id for trade {trade_id}: {e}"
+                            f"[{account_key}] Position resolution failed for trade {trade_id}: {e}"
                         )
                 if status == "filled":
                     logger.info(

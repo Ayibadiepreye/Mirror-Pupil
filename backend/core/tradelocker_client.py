@@ -755,6 +755,46 @@ class TradeLockerClient:
         except Exception as e:
             logger.error(f"[{self.credential_key}] Error fetching price for {symbol}: {e}")
             return None
+    
+    async def get_position_id_from_order_id(self, order_id: int) -> Optional[int]:
+        """
+        Get position_id from order_id using SDK's built-in order history lookup.
+        
+        This is the most reliable method for resolving position IDs, especially
+        in multi-position scenarios (hedging, concurrent entries, re-entries).
+        
+        Args:
+            order_id: TradeLocker order ID
+        
+        Returns:
+            Position ID if found, None if order not yet in history
+        
+        Note:
+            - Uses get_all_orders(history=True) internally
+            - May return None if order is still pending or very recent
+            - Caller should implement retry logic with small delays (e.g., 10x 0.5s)
+        """
+        logger.debug(f"[{self.credential_key}] Resolving position_id from order_id {order_id}")
+        
+        try:
+            position_id = await self._call_api("get_position_id_from_order_id", order_id)
+            
+            if position_id is not None:
+                logger.debug(
+                    f"[{self.credential_key}] ✓ Resolved order {order_id} → position {position_id}"
+                )
+            else:
+                logger.debug(
+                    f"[{self.credential_key}] Order {order_id} not found in history (may be too recent)"
+                )
+            
+            return position_id
+            
+        except Exception as e:
+            logger.warning(
+                f"[{self.credential_key}] Failed to resolve position_id from order {order_id}: {e}"
+            )
+            return None
 
 
 # Token refresh background task
