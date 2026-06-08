@@ -503,6 +503,20 @@ class DatabaseManager:
             )
             return [ActiveTrade(**dict(row)) for row in rows]
     
+    async def get_active_trades_by_account_and_channel(
+        self, account_key: str, channel_id: int
+    ) -> List[ActiveTrade]:
+        """
+        Get all active trades for a specific account and channel (for context matching).
+        Used by management action context matchers to find trades for specific account.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM active_trades WHERE account_key = $1 AND channel_id = $2 AND status = 'filled'",
+                account_key, channel_id
+            )
+            return [ActiveTrade(**dict(row)) for row in rows]
+    
     async def get_active_trade_count(self, account_key: str) -> int:
         """Get count of active trades for an account."""
         async with self.pool.acquire() as conn:

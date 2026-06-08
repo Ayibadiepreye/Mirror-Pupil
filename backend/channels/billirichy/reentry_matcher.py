@@ -50,7 +50,7 @@ class ReentryParentMatcher:
             Parent ActiveTrade object or None
         """
         # Get all active trades for this account and channel
-        all_trades = await self.db.get_active_trades_by_channel(
+        all_trades = await self.db.get_active_trades_by_account_and_channel(
             account_key, self.channel_id
         )
         
