@@ -544,27 +544,27 @@ class TradeLockerClient:
             quantity: Lot size to close (None = close all, X = close X lots)
         
         SDK Translation:
-            quantity=None → omit qty parameter (full close)
-            quantity=X → qty=X (partial close of X lots)
+            quantity=None → omit close_quantity parameter (full close)
+            quantity=X → close_quantity=X (partial close of X lots)
         
-        Note: SDK accepts both 'qty' and 'quantity' parameters, we use 'qty'
+        Note: SDK uses 'close_quantity' parameter (NOT 'qty' or 'quantity')
         Note: Partial close calculation (percentage to lots) is done by caller.
         """
-        # Convert quantity to SDK's 'qty' parameter (SDK accepts 'qty' or 'quantity')
-        # SDK expects: qty=0 or omitted for full close, qty=X for partial close
+        # Convert quantity to SDK's 'close_quantity' parameter
+        # SDK expects: close_quantity=0 or omitted for full close, close_quantity=X for partial close
         if quantity:
             logger.info(
                 f"[{self.credential_key}] Closing {quantity} lots of position {position_id}"
             )
-            # Partial close - pass qty parameter
+            # Partial close - pass close_quantity parameter
             result = await self._call_api(
                 "close_position",
                 position_id=position_id,
-                qty=quantity
+                close_quantity=quantity
             )
         else:
             logger.info(f"[{self.credential_key}] Closing full position {position_id}")
-            # Full close - don't pass qty parameter (SDK default behavior)
+            # Full close - don't pass close_quantity parameter (SDK default behavior)
             result = await self._call_api(
                 "close_position",
                 position_id=position_id

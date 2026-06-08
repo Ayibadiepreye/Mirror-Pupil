@@ -4,35 +4,35 @@
     "status": "PASS",
     "message": "Connected to database successfully",
     "details": {},
-    "timestamp": "2026-06-05T21:43:59.562088"
+    "timestamp": "2026-06-08T15:34:01.213723"
   },
   {
     "name": "Load Credentials from DB",
     "status": "PASS",
     "message": "Found account: 1",
     "details": {},
-    "timestamp": "2026-06-05T21:44:00.198012"
+    "timestamp": "2026-06-08T15:34:01.881350"
   },
   {
     "name": "Create TradeLockerClient",
     "status": "PASS",
     "message": "Client created for bonnieprincewill6@gmail.com on HEROFX (demo), account_id=2135871",
     "details": {},
-    "timestamp": "2026-06-05T21:44:00.830164"
+    "timestamp": "2026-06-08T15:34:02.542468"
   },
   {
     "name": "Authentication",
     "status": "PASS",
     "message": "Successfully authenticated with TradeLocker",
     "details": {},
-    "timestamp": "2026-06-05T21:44:03.390729"
+    "timestamp": "2026-06-08T15:34:06.048093"
   },
   {
     "name": "Token Expiration Tracking",
     "status": "PASS",
-    "message": "Token expires at 2026-06-06 20:44:01.517263",
+    "message": "Token expires at 2026-06-09 14:34:03.372365",
     "details": {},
-    "timestamp": "2026-06-05T21:44:03.390729"
+    "timestamp": "2026-06-08T15:34:06.048093"
   },
   {
     "name": "Get All Accounts",
@@ -43,21 +43,21 @@
         1
       ]
     },
-    "timestamp": "2026-06-05T21:44:05.508130"
+    "timestamp": "2026-06-08T15:34:07.527232"
   },
   {
     "name": "Get Account State",
     "status": "PASS",
-    "message": "Balance: $99794.12",
+    "message": "Balance: $99793.19",
     "details": {
       "state": {
-        "balance": 99794.12,
-        "projectedBalance": 99794.12,
-        "availableFunds": 99794.12,
+        "balance": 99793.19,
+        "projectedBalance": 99793.19,
+        "availableFunds": 99793.19,
         "blockedBalance": 0,
-        "cashBalance": 99794.12,
+        "cashBalance": 99793.19,
         "unsettledCash": 0,
-        "withdrawalAvailable": 99794.12,
+        "withdrawalAvailable": 99793.19,
         "stocksValue": 0,
         "optionValue": 0,
         "initialMarginReq": 0,
@@ -67,19 +67,19 @@
         "stockOrdersReq": 0,
         "stopOutLevel": 166.67,
         "warningMarginReq": 0,
-        "marginBeforeWarning": 99794.12,
-        "todayGross": -1.08,
-        "todayNet": -1.08,
+        "marginBeforeWarning": 99793.19,
+        "todayGross": -0.59,
+        "todayNet": -0.59,
         "todayFees": 0,
-        "todayVolume": 0.08,
-        "todayTradesCount": 8,
+        "todayVolume": 0.22,
+        "todayTradesCount": 22,
         "openGrossPnL": 0,
         "openNetPnL": 0.0,
         "positionsCount": 0,
         "ordersCount": 0
       }
     },
-    "timestamp": "2026-06-05T21:44:08.805236"
+    "timestamp": "2026-06-08T15:34:10.847368"
   },
   {
     "name": "Get Open Positions",
@@ -88,7 +88,7 @@
     "details": {
       "positions": []
     },
-    "timestamp": "2026-06-05T21:44:10.240634"
+    "timestamp": "2026-06-08T15:34:12.414263"
   },
   {
     "name": "Get All Instruments",
@@ -121,42 +121,42 @@
         "hasDaily": true
       }
     },
-    "timestamp": "2026-06-05T21:44:11.888213"
+    "timestamp": "2026-06-08T15:34:13.905187"
   },
   {
     "name": "Resolve Symbol: EURUSD",
     "status": "PASS",
     "message": "Resolved to instrument_id=4665",
     "details": {},
-    "timestamp": "2026-06-05T21:44:11.892580"
+    "timestamp": "2026-06-08T15:34:13.911707"
   },
   {
     "name": "Resolve Symbol: GBPUSD",
     "status": "PASS",
     "message": "Resolved to instrument_id=4664",
     "details": {},
-    "timestamp": "2026-06-05T21:44:12.095185"
+    "timestamp": "2026-06-08T15:34:14.121580"
   },
   {
     "name": "Resolve Symbol: XAUUSD",
     "status": "PASS",
     "message": "Resolved to instrument_id=4709",
     "details": {},
-    "timestamp": "2026-06-05T21:44:12.299182"
+    "timestamp": "2026-06-08T15:34:14.322699"
   },
   {
     "name": "Resolve Symbol: USDJPY",
     "status": "PASS",
     "message": "Resolved to instrument_id=4663",
     "details": {},
-    "timestamp": "2026-06-05T21:44:12.500847"
+    "timestamp": "2026-06-08T15:34:14.522861"
   },
   {
     "name": "Resolve Symbol: US30",
     "status": "PASS",
     "message": "Resolved to instrument_id=4690",
     "details": {},
-    "timestamp": "2026-06-05T21:44:12.702739"
+    "timestamp": "2026-06-08T15:34:14.724364"
   },
   {
     "name": "Validate Instrument Routes",
@@ -166,7 +166,7 @@
       "info": true,
       "trade": true
     },
-    "timestamp": "2026-06-05T21:44:13.107047"
+    "timestamp": "2026-06-08T15:34:15.126719"
   },
   {
     "name": "Get Instrument Details: EURUSD",
@@ -181,7 +181,7 @@
       "max_quantity": 50.0,
       "lot_step": 0.01
     },
-    "timestamp": "2026-06-05T21:44:14.591588"
+    "timestamp": "2026-06-08T15:34:16.558128"
   },
   {
     "name": "Get Instrument Details: USDJPY",
@@ -196,7 +196,7 @@
       "max_quantity": 50.0,
       "lot_step": 0.01
     },
-    "timestamp": "2026-06-05T21:44:16.143984"
+    "timestamp": "2026-06-08T15:34:18.418186"
   },
   {
     "name": "Get Instrument Details: XAUUSD",
@@ -211,374 +211,367 @@
       "max_quantity": 50.0,
       "lot_step": 0.01
     },
-    "timestamp": "2026-06-05T21:44:17.669956"
+    "timestamp": "2026-06-08T15:34:20.367352"
   },
   {
     "name": "Get Market Price: EURUSD",
     "status": "PASS",
-    "message": "Price: 1.15222",
+    "message": "Price: 1.15383",
     "details": {},
-    "timestamp": "2026-06-05T21:44:20.746284"
+    "timestamp": "2026-06-08T15:34:23.239355"
   },
   {
     "name": "Get Market Price: GBPUSD",
     "status": "PASS",
-    "message": "Price: 1.33366",
+    "message": "Price: 1.33441",
     "details": {},
-    "timestamp": "2026-06-05T21:44:23.625635"
+    "timestamp": "2026-06-08T15:34:26.195693"
   },
   {
     "name": "Get Market Price: USDJPY",
     "status": "PASS",
-    "message": "Price: 160.23150",
+    "message": "Price: 160.11850",
     "details": {},
-    "timestamp": "2026-06-05T21:44:26.496844"
+    "timestamp": "2026-06-08T15:34:29.175340"
   },
   {
     "name": "Get Market Price: XAUUSD",
     "status": "PASS",
-    "message": "Price: 4324.58500",
+    "message": "Price: 4322.16500",
     "details": {},
-    "timestamp": "2026-06-05T21:44:29.615169"
+    "timestamp": "2026-06-08T15:34:32.062343"
   },
   {
     "name": "Get Market Price: EURGBP",
     "status": "PASS",
-    "message": "Price: 0.86394",
+    "message": "Price: 0.86468",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.939582"
+    "timestamp": "2026-06-08T15:34:35.161192"
   },
   {
     "name": "Symbol Type Detection: EURUSD",
     "status": "PASS",
     "message": "Detected as quote_usd",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Type Detection: USDJPY",
     "status": "PASS",
     "message": "Detected as base_usd",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Type Detection: EURGBP",
     "status": "PASS",
     "message": "Detected as cross",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Type Detection: XAUUSD",
     "status": "PASS",
     "message": "Detected as quote_usd",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Type Detection: US30",
     "status": "PASS",
     "message": "Detected as index",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Parsing: EURUSD",
     "status": "PASS",
     "message": "EUR/USD",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Parsing: USDJPY",
     "status": "PASS",
     "message": "USD/JPY",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Parsing: XAUUSD",
     "status": "PASS",
     "message": "XAU/USD",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "Symbol Parsing: GBPJPY",
     "status": "PASS",
     "message": "GBP/JPY",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.942583"
+    "timestamp": "2026-06-08T15:34:35.162191"
   },
   {
     "name": "USD Risk: EURUSD",
     "status": "PASS",
     "message": "Risk: $5.00 (expected ~$5.00)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.946605"
+    "timestamp": "2026-06-08T15:34:35.163198"
   },
   {
     "name": "USD Risk: USDJPY",
     "status": "PASS",
     "message": "Risk: $3.33 (expected ~$3.33)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:32.948597"
+    "timestamp": "2026-06-08T15:34:35.164192"
   },
   {
     "name": "USD Risk: EURGBP (cross)",
     "status": "PASS",
     "message": "Risk: $6.67 (with live conversion)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.330434"
+    "timestamp": "2026-06-08T15:34:39.502065"
   },
   {
     "name": "USD P&L: EURUSD BUY",
     "status": "PASS",
     "message": "P&L: $5.00 (expected ~$5.00)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.331429"
+    "timestamp": "2026-06-08T15:34:39.503053"
   },
   {
     "name": "Lot Size Rounding: 0.01",
     "status": "PASS",
     "message": "Rounded to 0.01 (step=0.01)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.332428"
+    "timestamp": "2026-06-08T15:34:39.504055"
   },
   {
     "name": "Lot Size Rounding: 0.015",
     "status": "PASS",
     "message": "Rounded to 0.02 (step=0.01)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.332428"
+    "timestamp": "2026-06-08T15:34:39.504055"
   },
   {
     "name": "Lot Size Rounding: 0.037",
     "status": "PASS",
     "message": "Rounded to 0.04 (step=0.01)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.332428"
+    "timestamp": "2026-06-08T15:34:39.504055"
   },
   {
     "name": "Lot Size Rounding: 1.234",
     "status": "PASS",
     "message": "Rounded to 1.23 (step=0.01)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.332428"
+    "timestamp": "2026-06-08T15:34:39.504055"
   },
   {
     "name": "Order Creation Tests",
     "status": "PASS",
     "message": "Order creation methods exist and are properly structured (not executed)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.332428"
+    "timestamp": "2026-06-08T15:34:39.505057"
   },
   {
     "name": "Position Management",
     "status": "PASS",
     "message": "No open positions (nothing to test)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.333429"
+    "timestamp": "2026-06-08T15:34:39.506054"
   },
   {
     "name": "Order Management",
     "status": "PASS",
     "message": "Order management methods exist (not tested without live orders)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:37.335390"
+    "timestamp": "2026-06-08T15:34:39.506054"
   },
   {
     "name": "Invalid Symbol Handling",
     "status": "PASS",
     "message": "Returns None for invalid symbol",
     "details": {},
-    "timestamp": "2026-06-05T21:44:40.360628"
+    "timestamp": "2026-06-08T15:34:42.518318"
   },
   {
     "name": "Zero Lot Size",
     "status": "PASS",
     "message": "Returns 0 risk for 0 lot size",
     "details": {},
-    "timestamp": "2026-06-05T21:44:40.362664"
+    "timestamp": "2026-06-08T15:34:42.519344"
   },
   {
     "name": "Same Entry and SL",
     "status": "PASS",
     "message": "Returns minimal risk ($0.0001)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:40.363668"
+    "timestamp": "2026-06-08T15:34:42.519344"
   },
   {
     "name": "Rate Limiting",
     "status": "PASS",
-    "message": "10 requests took 15.40s (rate limited)",
+    "message": "10 requests took 16.48s (rate limited)",
     "details": {},
-    "timestamp": "2026-06-05T21:44:55.767911"
+    "timestamp": "2026-06-08T15:34:59.002803"
   },
   {
     "name": "Get Market Price for Trade",
     "status": "PASS",
-    "message": "EURUSD market price: 1.15226",
+    "message": "EURUSD market price: 1.15386",
     "details": {},
-    "timestamp": "2026-06-05T21:44:58.740697"
+    "timestamp": "2026-06-08T15:35:01.898336"
   },
   {
     "name": "Place MARKET BUY Order",
     "status": "PASS",
-    "message": "Order 432345564229839978 placed, position None, filled at 1.15226",
+    "message": "Order 432345564230056270 placed, position None, filled at 1.15386",
     "details": {
-      "order": 432345564229839978
+      "order": 432345564230056270
     },
-    "timestamp": "2026-06-05T21:45:01.836532"
+    "timestamp": "2026-06-08T15:35:03.381621"
   },
   {
     "name": "Verify Position Appears",
     "status": "PASS",
-    "message": "Position found in get_all_positions() - position_id: 432345564227907303",
+    "message": "Position found in get_all_positions() - position_id: 432345564227934216",
     "details": {},
-    "timestamp": "2026-06-05T21:45:04.549179"
+    "timestamp": "2026-06-08T15:35:05.853144"
   },
   {
     "name": "Modify Stop Loss",
     "status": "PASS",
-    "message": "SL modified to 1.15126",
+    "message": "SL modified to 1.15286",
     "details": {},
-    "timestamp": "2026-06-05T21:45:05.981179"
+    "timestamp": "2026-06-08T15:35:07.278840"
   },
   {
     "name": "Modify Take Profit",
     "status": "PASS",
-    "message": "TP modified to 1.15525",
+    "message": "TP modified to 1.15685",
     "details": {},
-    "timestamp": "2026-06-05T21:45:07.653395"
+    "timestamp": "2026-06-08T15:35:08.714954"
   },
   {
     "name": "Move to Breakeven",
     "status": "PASS",
-    "message": "SL moved to entry price 1.15226",
+    "message": "SL moved to entry price 1.15386",
     "details": {},
-    "timestamp": "2026-06-05T21:45:09.088873"
+    "timestamp": "2026-06-08T15:35:10.135781"
   },
   {
     "name": "Partial Close (50%)",
-    "status": "FAIL",
-    "message": "TLAPI.close_position() got an unexpected keyword argument 'lots'",
+    "status": "PASS",
+    "message": "Closed 0.005 lots (50%)",
     "details": {},
-    "timestamp": "2026-06-05T21:45:12.109706"
+    "timestamp": "2026-06-08T15:35:11.588469"
   },
   {
     "name": "Full Close (Remaining)",
-    "status": "FAIL",
-    "message": "TLAPI.close_position() got an unexpected keyword argument 'lots'",
+    "status": "PASS",
+    "message": "Position fully closed",
     "details": {},
-    "timestamp": "2026-06-05T21:45:16.143126"
+    "timestamp": "2026-06-08T15:35:14.063497"
   },
   {
     "name": "Place LIMIT Order",
     "status": "PASS",
-    "message": "Limit order 432345564229840051 placed at 1.14726",
+    "message": "Limit order 432345564230056334 placed at 1.14889",
     "details": {
-      "order": 432345564229840051
+      "order": 432345564230056334
     },
-    "timestamp": "2026-06-05T21:45:20.451114"
+    "timestamp": "2026-06-08T15:35:18.381415"
   },
   {
     "name": "Check Pending Order Status",
     "status": "PASS",
     "message": "Order status: new",
     "details": {},
-    "timestamp": "2026-06-05T21:45:22.998910"
+    "timestamp": "2026-06-08T15:35:20.863477"
   },
   {
     "name": "Cancel Pending Order",
     "status": "PASS",
-    "message": "Order 432345564229840051 cancelled",
+    "message": "Order 432345564230056334 cancelled",
     "details": {},
-    "timestamp": "2026-06-05T21:45:24.443789"
+    "timestamp": "2026-06-08T15:35:22.299066"
   },
   {
     "name": "Read Trading Hours Settings",
     "status": "PASS",
     "message": "EOD: false, Weekend: false",
     "details": {},
-    "timestamp": "2026-06-05T21:45:25.627225"
+    "timestamp": "2026-06-08T15:35:23.400445"
   },
   {
     "name": "Check Current Trading Status",
     "status": "PASS",
-    "message": "Trading allowed: False, Reason: WEEKEND_CLOSE - No new trades after 4:45 PM EST on Friday (currently 04:45 PM)",
+    "message": "Trading allowed: True, Reason: OK",
     "details": {},
-    "timestamp": "2026-06-05T21:45:26.883986"
-  },
-  {
-    "name": "Get Next Trading Window",
-    "status": "PASS",
-    "message": "Next window: Sunday 6:00 PM EST",
-    "details": {},
-    "timestamp": "2026-06-05T21:45:26.883986"
+    "timestamp": "2026-06-08T15:35:28.117191"
   },
   {
     "name": "Get Risk Profile",
     "status": "PASS",
     "message": "Profile: Blue Guardian Instant Standard",
     "details": {},
-    "timestamp": "2026-06-05T21:45:28.033791"
+    "timestamp": "2026-06-08T15:35:29.210711"
   },
   {
     "name": "Validate Hypothetical Trade",
     "status": "PASS",
     "message": "Allowed: True, Reason: All risk checks passed, Risk: $5.00",
     "details": {},
-    "timestamp": "2026-06-05T21:45:33.087871"
+    "timestamp": "2026-06-08T15:35:34.197645"
   },
   {
     "name": "Fetch Live Balance",
     "status": "PASS",
-    "message": "Live balance: $99794.12",
+    "message": "Live balance: $99793.10",
     "details": {},
-    "timestamp": "2026-06-05T21:45:34.690148"
+    "timestamp": "2026-06-08T15:35:35.647111"
   },
   {
     "name": "Compare with Database Balance",
     "status": "PASS",
-    "message": "DB: $99795.20, Live: $99794.12, Diff: $1.08",
+    "message": "DB: $99795.20, Live: $99793.10, Diff: $2.10",
     "details": {},
-    "timestamp": "2026-06-05T21:45:35.422633"
+    "timestamp": "2026-06-08T15:35:36.085601"
   },
   {
     "name": "Trail Distance Configuration",
     "status": "PASS",
     "message": "Trail distances defined for all test symbols",
     "details": {},
-    "timestamp": "2026-06-05T21:45:35.423652"
+    "timestamp": "2026-06-08T15:35:36.085601"
   },
   {
     "name": "Trail Calculation Logic",
     "status": "PASS",
     "message": "EURUSD trail=0.0008, BUY SL=1.09920, SELL SL=1.10080",
     "details": {},
-    "timestamp": "2026-06-05T21:45:35.423652"
+    "timestamp": "2026-06-08T15:35:36.085601"
   },
   {
     "name": "Create Mock ParsedSignal",
     "status": "PASS",
     "message": "Signal: EURUSD BUY",
     "details": {},
-    "timestamp": "2026-06-05T21:45:35.425853"
+    "timestamp": "2026-06-08T15:35:36.087205"
   },
   {
     "name": "Signal Execution Structure",
     "status": "PASS",
     "message": "TradeExecutor class available and importable",
     "details": {},
-    "timestamp": "2026-06-05T21:45:35.425853"
+    "timestamp": "2026-06-08T15:35:36.087205"
   },
   {
     "name": "Cleanup Test Trades",
     "status": "PASS",
     "message": "Cleaned up 1 test position(s)/order(s)",
     "details": {},
-    "timestamp": "2026-06-05T21:45:39.884725"
+    "timestamp": "2026-06-08T15:35:37.541331"
   }
 ]
