@@ -26,6 +26,7 @@ from ..channels.firepips.autonomous import get_firepips_autonomous_manager
 from ..core.balance_reconciliation import get_balance_monitor
 from ..core.trailing_stop_updater import get_trailing_stop_updater
 from ..core.pending_order_monitor import get_pending_order_monitor
+from ..core.position_reconciliation import get_position_reconciliation_monitor
 from ..telegram_integration import get_telegram_integration
 from ..channels.registry import get_registry
 
@@ -136,6 +137,11 @@ async def lifespan(app: FastAPI):
     await pending_monitor.start_monitoring()
     logger.info("✓ Pending order monitor started")
     
+    # Initialize position reconciliation monitor
+    position_monitor = await get_position_reconciliation_monitor(db)
+    await position_monitor.start_monitoring()
+    logger.info("✓ Position reconciliation monitor started")
+    
     # Initialize health monitor (credential validation every 60 minutes)
     health_monitor = get_health_monitor(account_manager)
     await health_monitor.start_monitoring()
@@ -176,6 +182,7 @@ async def lifespan(app: FastAPI):
     await balance_monitor.stop_monitoring()
     await trailing_updater.stop_updating()
     await pending_monitor.stop_monitoring()
+    await position_monitor.stop_monitoring()
     await risk_enforcer.stop_breach_monitoring()
     
     # Disconnect database

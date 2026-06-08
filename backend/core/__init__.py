@@ -9,6 +9,7 @@ from .trade_executor import TradeExecutor, get_trade_executor
 from .pending_order_monitor import PendingOrderMonitor, get_pending_order_monitor
 from .trailing_stop_updater import TrailingStopUpdater, get_trailing_stop_updater
 from .balance_reconciliation import BalanceReconciliationMonitor, get_balance_monitor
+from .position_reconciliation import PositionReconciliationMonitor, get_position_reconciliation_monitor
 from .health_monitor import HealthMonitor, get_health_monitor
 
 __all__ = [
@@ -24,6 +25,8 @@ __all__ = [
     "get_trailing_stop_updater",
     "BalanceReconciliationMonitor",
     "get_balance_monitor",
+    "PositionReconciliationMonitor",
+    "get_position_reconciliation_monitor",
     "HealthMonitor",
     "get_health_monitor",
 ]
