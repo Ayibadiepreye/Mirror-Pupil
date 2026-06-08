@@ -455,11 +455,12 @@ class RiskEnforcer:
                         )
                     except Exception as e:
                         logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                        # Fallback to simplified calculation
-                        if trade.direction == 'BUY':
-                            pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-                        else:
-                            pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                        # Fallback: return 0.0 instead of incorrect calculation
+                        logger.critical(
+                            f"[{account_key}] CRITICAL: P&L calculation failed for {trade.symbol}. "
+                            f"Recording as $0.00. Manual review required. Trade ID: {trade.trade_id}"
+                        )
+                        pnl = 0.0
                     
                     # Move to history
                     await self.db.close_active_trade(

@@ -816,6 +816,45 @@ class TradeExecutor:
                     "action": action
                 }
             
+            # Verify position still exists on TradeLocker (skip for CANCEL_PENDING)
+            if action != 'CANCEL_PENDING':
+                try:
+                    all_positions = await client.get_all_positions()
+                    position_exists = any(
+                        p.get('id') == int(trade.tl_position_id) for p in all_positions
+                    )
+                    
+                    if not position_exists:
+                        logger.error(
+                            f"[{account_key}] Position {trade.tl_position_id} no longer exists on TradeLocker. "
+                            f"Trade: {trade.symbol} {trade.direction}. Moving to history as EXTERNAL close."
+                        )
+                        
+                        # Mark as closed externally
+                        try:
+                            market_price = await client.get_market_price(trade.symbol)
+                            exit_price = market_price if market_price else trade.entry_price
+                        except Exception:
+                            exit_price = trade.entry_price
+                        
+                        await self.db.move_trade_to_history(
+                            trade.trade_id,
+                            exit_price=exit_price,
+                            pnl=0.0,
+                            close_reason='EXTERNAL'
+                        )
+                        
+                        return {
+                            "trade_id": trade.trade_id,
+                            "status": "failed",
+                            "error": "position_closed_externally",
+                            "action": action
+                        }
+                except Exception as e:
+                    logger.warning(
+                        f"[{account_key}] Could not verify position existence: {e}. Proceeding anyway."
+                    )
+            
             # BREAKEVEN
             if action == 'BREAKEVEN':
                 await client.modify_position(
@@ -859,11 +898,12 @@ class TradeExecutor:
                     )
                 except Exception as e:
                     logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                    # Fallback
-                    if trade.direction == 'BUY':
-                        pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-                    else:
-                        pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                    # Fallback: return 0.0 instead of incorrect calculation
+                    logger.critical(
+                        f"[{account_key}] CRITICAL: P&L calculation failed for {trade.symbol}. "
+                        f"Recording as $0.00. Manual review required. Trade ID: {trade.trade_id}"
+                    )
+                    pnl = 0.0
                 
                 await self.db.move_trade_to_history(
                     trade.trade_id,
@@ -886,7 +926,7 @@ class TradeExecutor:
                     quantity=qty_to_close
                 )
                 
-                new_lot_size = round(trade.lot_size - qty_to_close, 2)
+                new_lot_size = trade.lot_size - qty_to_close
                 await self.db.update_trade_lot_size(trade.trade_id, new_lot_size)
                 
                 logger.info(
@@ -908,7 +948,30 @@ class TradeExecutor:
                     return {"trade_id": trade.trade_id, "status": "failed", "error": "No new SL provided"}
                 
                 # Validation: SL must be on correct side of market
-                # (This is a simplified check - full validation would need current market price)
+                try:
+                    market_price = await client.get_market_price(trade.symbol)
+                    if market_price:
+                        if trade.direction == 'BUY' and new_sl >= market_price:
+                            logger.error(
+                                f"[{account_key}] Invalid SL for BUY: {new_sl} >= market {market_price}"
+                            )
+                            return {
+                                "trade_id": trade.trade_id,
+                                "status": "failed",
+                                "error": f"Invalid SL for BUY: {new_sl} must be below market {market_price}"
+                            }
+                        elif trade.direction == 'SELL' and new_sl <= market_price:
+                            logger.error(
+                                f"[{account_key}] Invalid SL for SELL: {new_sl} <= market {market_price}"
+                            )
+                            return {
+                                "trade_id": trade.trade_id,
+                                "status": "failed",
+                                "error": f"Invalid SL for SELL: {new_sl} must be above market {market_price}"
+                            }
+                except Exception as e:
+                    logger.warning(f"[{account_key}] Could not validate SL direction: {e}")
+                
                 await client.modify_position(
                     position_id=trade.tl_position_id,
                     stop_loss=new_sl
@@ -925,6 +988,31 @@ class TradeExecutor:
                 new_tp = mgmt.new_tp
                 if not new_tp:
                     return {"trade_id": trade.trade_id, "status": "failed", "error": "No new TP provided"}
+                
+                # Validation: TP must be on correct side of market
+                try:
+                    market_price = await client.get_market_price(trade.symbol)
+                    if market_price:
+                        if trade.direction == 'BUY' and new_tp <= market_price:
+                            logger.error(
+                                f"[{account_key}] Invalid TP for BUY: {new_tp} <= market {market_price}"
+                            )
+                            return {
+                                "trade_id": trade.trade_id,
+                                "status": "failed",
+                                "error": f"Invalid TP for BUY: {new_tp} must be above market {market_price}"
+                            }
+                        elif trade.direction == 'SELL' and new_tp >= market_price:
+                            logger.error(
+                                f"[{account_key}] Invalid TP for SELL: {new_tp} >= market {market_price}"
+                            )
+                            return {
+                                "trade_id": trade.trade_id,
+                                "status": "failed",
+                                "error": f"Invalid TP for SELL: {new_tp} must be below market {market_price}"
+                            }
+                except Exception as e:
+                    logger.warning(f"[{account_key}] Could not validate TP direction: {e}")
                 
                 await client.modify_position(
                     position_id=trade.tl_position_id,
@@ -945,7 +1033,7 @@ class TradeExecutor:
                     position_id=trade.tl_position_id,
                     quantity=qty_to_close
                 )
-                new_lot_size = round(trade.lot_size - qty_to_close, 2)
+                new_lot_size = trade.lot_size - qty_to_close
                 await self.db.update_trade_lot_size(trade.trade_id, new_lot_size)
                 
                 # Set breakeven
@@ -988,6 +1076,17 @@ class TradeExecutor:
             # CANCEL_PENDING
             elif action == 'CANCEL_PENDING':
                 if trade.status in ['new', 'pending']:  # TradeLocker uses 'new' for pending orders
+                    if not trade.tl_order_id:
+                        logger.error(
+                            f"[{account_key}] Cannot cancel order for {trade.symbol}: "
+                            f"order_id not resolved. Trade ID: {trade.trade_id}"
+                        )
+                        return {
+                            "trade_id": trade.trade_id,
+                            "status": "failed",
+                            "error": "order_id not resolved"
+                        }
+                    
                     await client.delete_order(order_id=trade.tl_order_id)
                     await self.db.remove_active_trade(trade.trade_id)
                     logger.info(
