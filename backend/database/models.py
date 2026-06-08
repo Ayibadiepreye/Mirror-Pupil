@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, field_validator
 class Channel(BaseModel):
     """Signal source channel."""
     channel_id: int
-    display_name: str
+    channel_name: str  # Original identifier
+    display_name: Optional[str] = None  # Custom GUI name
     signal_prefix: str
     entry_logic_module: str
     management_logic_module: str
@@ -51,7 +52,8 @@ class Account(BaseModel):
     tl_password: str  # Should be encrypted
     tl_server: str = "live"  # Environment: "live" or "demo"
     tl_prop_firm: str = ""  # Broker/Prop firm name (e.g., "Blue Guardian")
-    display_name: Optional[str] = None
+    display_name: Optional[str] = None  # Custom GUI name
+    lot_size_override: Optional[float] = None  # Per-account lot size
     initial_balance: Optional[float] = None
     current_balance: Optional[float] = None
     highest_banked_balance: Optional[float] = None
@@ -81,6 +83,7 @@ class ActiveTrade(BaseModel):
     trade_id: Optional[int] = None
     account_key: str
     channel_id: int
+    channel_name: Optional[str] = None  # For display without joins
     signal_id: str
     sub_signal_id: Optional[str] = None
     symbol: str
@@ -113,6 +116,7 @@ class TradeHistory(BaseModel):
     history_id: Optional[int] = None
     account_key: str
     channel_id: int
+    channel_name: Optional[str] = None  # For display without joins
     signal_id: str
     sub_signal_id: Optional[str] = None
     symbol: str
@@ -127,6 +131,7 @@ class TradeHistory(BaseModel):
     pnl: float
     outcome: str  # WIN, LOSS, BE
     close_reason: str  # TP_HIT, SL_HIT, MANUAL, AUTONOMOUS, EOD, WEEKEND
+    manual_action_type: Optional[str] = None  # MANUAL_CLOSE, MANUAL_BE, MANUAL_PARTIAL
 
 
 class ProfitableDay(BaseModel):
@@ -143,3 +148,27 @@ class MessageCache(BaseModel):
     msg_id: int
     channel_id: int
     processed_at: Optional[datetime] = None
+
+
+class Notification(BaseModel):
+    """Real-time notification for GUI."""
+    notification_id: Optional[int] = None
+    account_key: Optional[str] = None
+    category: str  # SIGNAL, EXECUTION, MANAGEMENT, BREACH, SYSTEM
+    severity: str  # INFO, WARNING, ERROR, CRITICAL
+    title: str
+    message: str
+    metadata: Optional[dict] = None  # Additional data
+    read: bool = False
+    created_at: Optional[datetime] = None
+
+
+class ManualAction(BaseModel):
+    """Audit trail for manual user actions."""
+    action_id: Optional[int] = None
+    account_key: str
+    trade_id: Optional[int] = None
+    action_type: str  # MANUAL_CLOSE, MANUAL_BE, MANUAL_PARTIAL_25, etc.
+    action_data: Optional[dict] = None  # Additional details
+    performed_at: Optional[datetime] = None
+

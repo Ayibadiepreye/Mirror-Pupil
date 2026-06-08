@@ -13,6 +13,8 @@ from .models import (
     WaitingRoom,
     TradeHistory,
     ProfitableDay,
+    Notification,
+    ManualAction,
 )
 
 __all__ = [
@@ -26,4 +28,6 @@ __all__ = [
     "WaitingRoom",
     "TradeHistory",
     "ProfitableDay",
+    "Notification",
+    "ManualAction",
 ]
