@@ -1,0 +1,16 @@
+<!--
+  Mirror Pupil — placeholder logo.
+  Swap this file (or change the import in src/components/mp/AppShell.tsx)
+  with your final brand mark. Keep it square; recommended 256x256 SVG/PNG.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B22222"/>
+      <stop offset="1" stop-color="#E74C3C"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <path d="M16 44V20l16 12 16-12v24" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="32" cy="36" r="3.5" fill="#fff"/>
+</svg>

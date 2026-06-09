@@ -1,0 +1,143 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Mirror Pupil — "Knights of the Blood Oath" theme.
+ * Dark-only. Crimson + steel. Inter UI, JetBrains Mono for numbers.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-mp-base: var(--mp-base);
+  --color-mp-app: var(--mp-app);
+  --color-mp-crimson: var(--mp-crimson);
+  --color-mp-red: var(--mp-red);
+  --color-mp-text: var(--mp-text);
+  --color-mp-text-dim: var(--mp-text-dim);
+  --color-mp-border: var(--mp-border);
+  --color-mp-success: var(--mp-success);
+  --color-mp-danger: var(--mp-danger);
+  --color-mp-warning: var(--mp-warning);
+  --color-mp-info: var(--mp-info);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Knights of the Blood Oath */
+  --mp-base: oklch(0.18 0.005 270);          /* #16161a */
+  --mp-app: oklch(0.21 0.006 285);           /* #1e1e24 */
+  --mp-crimson: oklch(0.45 0.18 27);         /* #b22222 */
+  --mp-red: oklch(0.62 0.21 27);             /* #e74c3c */
+  --mp-text: oklch(0.92 0.003 270);          /* #e0e0e0 */
+  --mp-text-dim: oklch(0.70 0.005 270);      /* #a0a0a0 */
+  --mp-border: oklch(0.27 0.006 285);        /* #2a2a30 */
+  --mp-success: oklch(0.72 0.15 162);        /* #10b981 */
+  --mp-danger: oklch(0.65 0.22 27);          /* #ef4444 */
+  --mp-warning: oklch(0.78 0.16 75);         /* #f59e0b */
+  --mp-info: oklch(0.65 0.18 254);           /* #3b82f6 */
+
+  /* Shadcn tokens mapped onto Knights palette */
+  --background: var(--mp-app);
+  --foreground: var(--mp-text);
+  --card: var(--mp-base);
+  --card-foreground: var(--mp-text);
+  --popover: var(--mp-base);
+  --popover-foreground: var(--mp-text);
+  --primary: var(--mp-red);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.26 0.006 285);
+  --secondary-foreground: var(--mp-text);
+  --muted: oklch(0.24 0.006 285);
+  --muted-foreground: var(--mp-text-dim);
+  --accent: var(--mp-crimson);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: var(--mp-danger);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: var(--mp-border);
+  --input: var(--mp-border);
+  --ring: var(--mp-red);
+  --chart-1: var(--mp-success);
+  --chart-2: var(--mp-danger);
+  --chart-3: var(--mp-warning);
+  --chart-4: var(--mp-info);
+  --chart-5: var(--mp-crimson);
+  --sidebar: var(--mp-base);
+  --sidebar-foreground: var(--mp-text);
+  --sidebar-primary: var(--mp-red);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.26 0.006 285);
+  --sidebar-accent-foreground: var(--mp-text);
+  --sidebar-border: var(--mp-border);
+  --sidebar-ring: var(--mp-red);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  .mono, .font-mono, code, pre {
+    font-family: var(--font-mono);
+  }
+
+  /* Subtle crimson scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--mp-base); }
+  ::-webkit-scrollbar-thumb {
+    background: var(--mp-border);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--mp-crimson); }
+}
