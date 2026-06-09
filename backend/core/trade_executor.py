@@ -1293,7 +1293,7 @@ async def get_trade_executor(db: DatabaseManager) -> TradeExecutor:
             if trade.tl_position_id:
                 success = await client.modify_position(
                     int(trade.tl_position_id),
-                    {'sl': new_sl}
+                    stop_loss=new_sl
                 )
                 if not success:
                     logger.error(f"Failed to modify position {trade.tl_position_id}")

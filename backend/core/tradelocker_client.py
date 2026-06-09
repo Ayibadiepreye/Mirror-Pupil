@@ -225,7 +225,7 @@ class TradeLockerClient:
                                 environment=self.environment_url,
                                 access_token=self.access_token,
                                 refresh_token=self.refresh_token,
-                                account_id=self.account_id  # Bind to specific sub-account
+                                account_id=int(self.account_id)  # SDK requires int, not str
                             )
                             logger.debug(f"[{self.credential_key}] TLAPI bound to account_id={self.account_id}")
                         else:
@@ -507,19 +507,21 @@ class TradeLockerClient:
     ) -> Dict:
         """
         Modify position SL/TP.
-        Wrapper that accepts stop_loss/take_profit and converts to SDK's sl/tp format.
+        Wrapper that accepts stop_loss/take_profit and converts to SDK's camelCase format.
         """
         logger.info(
             f"[{self.credential_key}] Modifying position {position_id}: "
             f"SL={stop_loss}, TP={take_profit}"
         )
         
-        # Build modification_params dict with SDK's expected keys (sl/tp)
+        # Build modification_params dict with SDK's expected keys (camelCase + type fields)
         modification_params = {}
         if stop_loss is not None:
-            modification_params["sl"] = stop_loss
+            modification_params["stopLoss"] = stop_loss
+            modification_params["stopLossType"] = "absolute"
         if take_profit is not None:
-            modification_params["tp"] = take_profit
+            modification_params["takeProfit"] = take_profit
+            modification_params["takeProfitType"] = "absolute"
         
         result = await self._call_api(
             "modify_position",
