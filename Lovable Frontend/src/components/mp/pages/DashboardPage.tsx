@@ -193,18 +193,21 @@ export function DashboardPage() {
         <section className="rounded-lg border border-[color:var(--mp-border)] bg-[color:var(--mp-base)] p-4 space-y-3">
           <h2 className="font-semibold mb-2">Quick actions</h2>
           <button
+            type="button"
             onClick={handleForceCloseAll}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-[color:var(--mp-danger)] hover:bg-[color:var(--mp-danger)]/90 text-white font-medium text-sm"
           >
             <ShieldOff className="size-4" /> Force close all positions
           </button>
           <button
+            type="button"
             onClick={() => bulkAccountAction("pause")}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-[color:var(--mp-border)] hover:bg-white/5 text-sm"
           >
             <PauseCircle className="size-4" /> Pause all accounts
           </button>
           <button
+            type="button"
             onClick={() => bulkAccountAction("resume")}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-[color:var(--mp-border)] hover:bg-white/5 text-sm"
           >

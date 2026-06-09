@@ -221,8 +221,16 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             <Field label="Email"><Input value={creds.email} onChange={(e) => setCreds({ ...creds, email: e.target.value })} /></Field>
             <Field label="Password"><Input type="password" value={creds.password} onChange={(e) => setCreds({ ...creds, password: e.target.value })} /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Server"><Input value={creds.server} onChange={(e) => setCreds({ ...creds, server: e.target.value })} /></Field>
-              <Field label="Prop firm"><Input value={creds.prop_firm} onChange={(e) => setCreds({ ...creds, prop_firm: e.target.value })} /></Field>
+              <Field label="Server">
+                <Select value={creds.server} onValueChange={(v) => setCreds({ ...creds, server: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select environment" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="live">Live</SelectItem>
+                    <SelectItem value="demo">Demo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Broker / Prop firm"><Input value={creds.prop_firm} onChange={(e) => setCreds({ ...creds, prop_firm: e.target.value })} /></Field>
             </div>
             <Button onClick={() => discoverM.mutate()} disabled={discoverM.isPending} className="w-full bg-[color:var(--mp-red)] hover:bg-[color:var(--mp-red)]/90 text-white">
               {discoverM.isPending ? "Discovering…" : "Discover accounts"}
@@ -245,8 +253,16 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             <Field label="Email"><Input value={manual.tl_email} onChange={(e) => setManual({ ...manual, tl_email: e.target.value })} /></Field>
             <Field label="Password"><Input type="password" value={manual.tl_password} onChange={(e) => setManual({ ...manual, tl_password: e.target.value })} /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Prop firm"><Input value={manual.tl_prop_firm} onChange={(e) => setManual({ ...manual, tl_prop_firm: e.target.value })} /></Field>
-              <Field label="Server"><Input value={manual.tl_server} onChange={(e) => setManual({ ...manual, tl_server: e.target.value })} /></Field>
+              <Field label="Broker / Prop firm"><Input value={manual.tl_prop_firm} onChange={(e) => setManual({ ...manual, tl_prop_firm: e.target.value })} /></Field>
+              <Field label="Server">
+                <Select value={manual.tl_server} onValueChange={(v) => setManual({ ...manual, tl_server: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select environment" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="live">Live</SelectItem>
+                    <SelectItem value="demo">Demo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Account ID"><Input value={manual.tl_account_id} onChange={(e) => setManual({ ...manual, tl_account_id: e.target.value })} /></Field>

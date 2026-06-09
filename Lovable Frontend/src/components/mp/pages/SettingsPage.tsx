@@ -85,7 +85,7 @@ function ChannelsTab() {
               <th className="px-3 py-2 text-left">Prefix</th>
               <th className="px-3 py-2 text-left">Priority</th>
               <th className="px-3 py-2 text-left">Enabled</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2 text-left">Actions</th>
             </tr>
           </thead>
           <tbody>

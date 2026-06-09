@@ -123,7 +123,7 @@ export function NotificationsPage() {
                   <span className="font-semibold">{n.title}</span> —{" "}
                   <span className="text-[color:var(--mp-text-dim)]">{n.message}</span>
                 </div>
-                <button onClick={() => markReadM.mutate(n.notification_id)} className="text-[11px] uppercase tracking-wider text-[color:var(--mp-text-dim)] hover:text-white">
+                <button type="button" onClick={() => markReadM.mutate(n.notification_id)} className="text-[11px] uppercase tracking-wider text-[color:var(--mp-text-dim)] hover:text-white">
                   Dismiss
                 </button>
               </li>
@@ -165,6 +165,7 @@ export function NotificationsPage() {
                     )}
                     {!!n.metadata && typeof n.metadata === "object" && Object.keys(n.metadata as object).length > 0 && (
                       <button
+                        type="button"
                         onClick={() => setExpanded(open ? null : n.notification_id)}
                         className="text-[10px] inline-flex items-center gap-0.5 text-[color:var(--mp-text-dim)] hover:text-white"
                       >

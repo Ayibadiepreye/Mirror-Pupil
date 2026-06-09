@@ -162,12 +162,12 @@ export function HistoryPage() {
       <div className="rounded-lg border border-[color:var(--mp-border)] bg-[color:var(--mp-base)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-[color:var(--mp-app)] text-[color:var(--mp-text-dim)] uppercase text-[10px] tracking-wider">
+            <thead className="bg-[color:var(--mp-app)] text-[10px] uppercase tracking-wider text-[color:var(--mp-text-dim)]">
               <tr>
                 {headers.map((h) => (
                   <th key={h.label} className={`px-3 py-2 text-left ${h.align ?? ""}`}>
                     {h.key ? (
-                      <button onClick={() => toggleSort(h.key)} className="inline-flex items-center gap-1 hover:text-white">
+                      <button type="button" onClick={() => toggleSort(h.key)} className="inline-flex items-center gap-1 hover:text-white">
                         {h.label}
                         {sort.key === h.key && (sort.dir === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />)}
                       </button>
