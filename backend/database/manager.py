@@ -240,6 +240,38 @@ class DatabaseManager:
             rows = await conn.fetch("SELECT * FROM risk_profiles ORDER BY profile_name")
             return [RiskProfile(**dict(row)) for row in rows]
     
+    async def get_risk_profiles_by_user(self, user_id: str, is_super_admin: bool = False) -> List[RiskProfile]:
+        """Get risk profiles for user. Returns default + user's custom profiles."""
+        async with self.pool.acquire() as conn:
+            if is_super_admin:
+                rows = await conn.fetch("SELECT * FROM risk_profiles ORDER BY profile_name")
+            else:
+                # Get default profile + user's custom profiles
+                rows = await conn.fetch(
+                    """
+                    SELECT * FROM risk_profiles 
+                    WHERE is_default = TRUE OR user_id = $1
+                    ORDER BY profile_name
+                    """,
+                    user_id
+                )
+            return [RiskProfile(**dict(row)) for row in rows]
+    
+    async def verify_risk_profile_access(
+        self, profile_id: int, user_id: str, is_super_admin: bool = False
+    ) -> bool:
+        """Verify user can access risk profile (default or owned by user or is admin)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT is_default, user_id FROM risk_profiles WHERE profile_id = $1",
+                profile_id
+            )
+            if not row:
+                return False
+            if is_super_admin or row['is_default']:
+                return True
+            return row['user_id'] == user_id
+    
     async def get_default_risk_profile(self) -> Optional[RiskProfile]:
         """Get the default risk profile."""
         async with self.pool.acquire() as conn:
@@ -256,12 +288,85 @@ class DatabaseManager:
             )
             return RiskProfile(**dict(row)) if row else None
     
+    # ==================== USER QUERIES ====================
+    
+    async def get_user_by_id(self, user_id: str) -> Optional[dict]:
+        """Get user by Firebase UID."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM users WHERE user_id = $1", user_id
+            )
+            return dict(row) if row else None
+    
+    async def create_user(
+        self,
+        user_id: str,
+        email: str,
+        is_super_admin: bool = False,
+        is_approved: bool = False
+    ) -> bool:
+        """Create a new user."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO users (user_id, email, is_super_admin, is_approved)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (user_id) DO NOTHING
+                    """,
+                    user_id, email, is_super_admin, is_approved
+                )
+                logger.info(f"✓ Created user: {email} (admin={is_super_admin}, approved={is_approved})")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+            return False
+    
+    async def approve_user(self, user_id: str) -> bool:
+        """Approve a user."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE users SET is_approved = TRUE WHERE user_id = $1",
+                    user_id
+                )
+                logger.info(f"✓ Approved user: {user_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to approve user: {e}")
+            return False
+    
+    async def get_all_users(self) -> List[dict]:
+        """Get all users (admin only)."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM users ORDER BY created_at DESC")
+            return [dict(row) for row in rows]
+    
+    async def get_pending_users(self) -> List[dict]:
+        """Get all pending approval users."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM users WHERE is_approved = FALSE ORDER BY created_at"
+            )
+            return [dict(row) for row in rows]
+    
     # ==================== ACCOUNT QUERIES ====================
     
     async def get_all_accounts(self) -> List[Account]:
         """Get all accounts."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM accounts")
+            return [Account(**dict(row)) for row in rows]
+    
+    async def get_accounts_by_user(self, user_id: str, is_super_admin: bool = False) -> List[Account]:
+        """Get accounts filtered by user_id. Super admin sees all."""
+        async with self.pool.acquire() as conn:
+            if is_super_admin:
+                rows = await conn.fetch("SELECT * FROM accounts")
+            else:
+                rows = await conn.fetch(
+                    "SELECT * FROM accounts WHERE user_id = $1", user_id
+                )
             return [Account(**dict(row)) for row in rows]
     
     async def get_account(self, account_key: str) -> Optional[Account]:
@@ -272,7 +377,19 @@ class DatabaseManager:
             )
             return Account(**dict(row)) if row else None
     
-    async def add_account(self, account: Account) -> bool:
+    async def verify_account_ownership(
+        self, account_key: str, user_id: str, is_super_admin: bool = False
+    ) -> bool:
+        """Verify that user owns account or is super admin."""
+        if is_super_admin:
+            return True
+        async with self.pool.acquire() as conn:
+            owner_id = await conn.fetchval(
+                "SELECT user_id FROM accounts WHERE account_key = $1", account_key
+            )
+            return owner_id == user_id if owner_id else False
+    
+    async def add_account(self, account: Account, user_id: Optional[str] = None) -> bool:
         """Add a new account."""
         try:
             async with self.pool.acquire() as conn:
@@ -282,8 +399,9 @@ class DatabaseManager:
                         account_key, credential_key, tl_account_id,
                         tl_email, tl_password, tl_server, tl_prop_firm, display_name,
                         initial_balance, current_balance, highest_banked_balance,
-                        daily_start_balance, last_synced_balance, cycle_start_date
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                        daily_start_balance, last_synced_balance, cycle_start_date,
+                        user_id
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                     """,
                     account.account_key, account.credential_key, account.tl_account_id,
                     account.tl_email, account.tl_password, account.tl_server,
@@ -291,9 +409,10 @@ class DatabaseManager:
                     account.initial_balance,  # highest_banked_balance starts at initial
                     account.current_balance,  # daily_start_balance
                     account.current_balance,  # last_synced_balance
-                    account.cycle_start_date or datetime.now().date()
+                    account.cycle_start_date or datetime.now().date(),
+                    user_id
                 )
-                logger.info(f"✓ Added account: {account.account_key}")
+                logger.info(f"✓ Added account: {account.account_key} (user: {user_id})")
                 return True
         except Exception as e:
             logger.error(f"Failed to add account: {e}")
@@ -661,6 +780,8 @@ class DatabaseManager:
     async def get_trade_history(
         self,
         account_key: Optional[str] = None,
+        user_id: Optional[str] = None,
+        is_super_admin: bool = False,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict]:
@@ -669,6 +790,8 @@ class DatabaseManager:
         
         Args:
             account_key: Optional account filter
+            user_id: User ID for filtering (regular users only see their trades)
+            is_super_admin: If True, sees all trades
             limit: Maximum number of records to return
             offset: Offset for pagination
         
@@ -677,25 +800,51 @@ class DatabaseManager:
         """
         try:
             async with self.pool.acquire() as conn:
-                if account_key:
-                    rows = await conn.fetch(
-                        """
-                        SELECT * FROM trade_history
-                        WHERE account_key = $1
-                        ORDER BY exit_time DESC
-                        LIMIT $2 OFFSET $3
-                        """,
-                        account_key, limit, offset
-                    )
+                if is_super_admin:
+                    # Super admin sees all
+                    if account_key:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM trade_history
+                            WHERE account_key = $1
+                            ORDER BY exit_time DESC
+                            LIMIT $2 OFFSET $3
+                            """,
+                            account_key, limit, offset
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            SELECT * FROM trade_history
+                            ORDER BY exit_time DESC
+                            LIMIT $1 OFFSET $2
+                            """,
+                            limit, offset
+                        )
                 else:
-                    rows = await conn.fetch(
-                        """
-                        SELECT * FROM trade_history
-                        ORDER BY exit_time DESC
-                        LIMIT $1 OFFSET $2
-                        """,
-                        limit, offset
-                    )
+                    # Regular user - filter by their accounts
+                    if account_key:
+                        rows = await conn.fetch(
+                            """
+                            SELECT th.* FROM trade_history th
+                            JOIN accounts a ON th.account_key = a.account_key
+                            WHERE th.account_key = $1 AND a.user_id = $2
+                            ORDER BY th.exit_time DESC
+                            LIMIT $3 OFFSET $4
+                            """,
+                            account_key, user_id, limit, offset
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            SELECT th.* FROM trade_history th
+                            JOIN accounts a ON th.account_key = a.account_key
+                            WHERE a.user_id = $1
+                            ORDER BY th.exit_time DESC
+                            LIMIT $2 OFFSET $3
+                            """,
+                            user_id, limit, offset
+                        )
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get trade history: {e}")
@@ -983,7 +1132,7 @@ class DatabaseManager:
     
     # ==================== RISK PROFILE CRUD METHODS ====================
     
-    async def add_risk_profile(self, profile: RiskProfile) -> Optional[int]:
+    async def add_risk_profile(self, profile: RiskProfile, user_id: Optional[str] = None) -> Optional[int]:
         """Add a new risk profile. Returns profile_id."""
         try:
             async with self.pool.acquire() as conn:
@@ -994,8 +1143,9 @@ class DatabaseManager:
                         max_risk_per_trade_pct, daily_loss_pct, daily_trailing,
                         overall_loss_pct, overall_trailing, overall_trail_from_closed_balance,
                         profit_lock_pct, profit_lock_floor_pct, payout_buffer_pct,
-                        max_concurrent_trades, commission_per_lot, safety_buffer_pct, notes
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                        max_concurrent_trades, commission_per_lot, safety_buffer_pct, notes,
+                        user_id
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                     RETURNING profile_id
                     """,
                     profile.profile_name, profile.is_default,
@@ -1003,10 +1153,11 @@ class DatabaseManager:
                     profile.overall_loss_pct, profile.overall_trailing, profile.overall_trail_from_closed_balance,
                     profile.profit_lock_pct, profile.profit_lock_floor_pct, profile.payout_buffer_pct,
                     profile.max_concurrent_trades, profile.commission_per_lot, profile.safety_buffer_pct,
-                    profile.notes
+                    profile.notes,
+                    user_id
                 )
                 
-                logger.info(f"✓ Created risk profile: {profile.profile_name} (ID: {profile_id})")
+                logger.info(f"✓ Created risk profile: {profile.profile_name} (ID: {profile_id}, user: {user_id})")
                 return profile_id
         except Exception as e:
             logger.error(f"Failed to create risk profile: {e}")
@@ -1647,34 +1798,6 @@ class DatabaseManager:
             logger.error(f"Failed to delete account: {e}")
             return False
     
-    async def add_risk_profile(self, profile: RiskProfile) -> Optional[int]:
-        """Add a new risk profile. Returns profile_id."""
-        try:
-            async with self.pool.acquire() as conn:
-                profile_id = await conn.fetchval(
-                    """
-                    INSERT INTO risk_profiles (
-                        profile_name, is_default, max_risk_per_trade_pct, daily_loss_pct,
-                        daily_trailing, overall_loss_pct, overall_trailing,
-                        overall_trail_from_closed_balance, profit_lock_pct, profit_lock_floor_pct,
-                        payout_buffer_pct, max_concurrent_trades, commission_per_lot,
-                        safety_buffer_pct, notes
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                    RETURNING profile_id
-                    """,
-                    profile.profile_name, profile.is_default, profile.max_risk_per_trade_pct,
-                    profile.daily_loss_pct, profile.daily_trailing, profile.overall_loss_pct,
-                    profile.overall_trailing, profile.overall_trail_from_closed_balance,
-                    profile.profit_lock_pct, profile.profit_lock_floor_pct,
-                    profile.payout_buffer_pct, profile.max_concurrent_trades,
-                    profile.commission_per_lot, profile.safety_buffer_pct, profile.notes
-                )
-                logger.info(f"✓ Added risk profile: {profile.profile_name} (ID: {profile_id})")
-                return profile_id
-        except Exception as e:
-            logger.error(f"Failed to add risk profile: {e}")
-            return None
-    
     async def reset_payout_after_withdrawal(self, account_key: str, new_balance: float) -> bool:
         """Reset account balances after payout withdrawal."""
         try:
@@ -1699,10 +1822,97 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to reset payout: {e}")
             return False
+    
+    # ==================== USER MANAGEMENT QUERIES ====================
+    
+    async def get_user_by_id(self, user_id: str) -> Optional[dict]:
+        """Get user by Firebase UID."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM users WHERE user_id = $1",
+                    user_id
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get user {user_id}: {e}")
+            return None
+    
+    async def create_user(
+        self,
+        user_id: str,
+        email: str,
+        display_name: Optional[str] = None,
+        is_super_admin: bool = False
+    ) -> Optional[dict]:
+        """Create new user (pending approval by default)."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO users (user_id, email, display_name, is_super_admin, is_approved)
+                    VALUES ($1, $2, $3, $4, FALSE)
+                    ON CONFLICT (user_id) DO UPDATE 
+                    SET email = $2, display_name = $3
+                    RETURNING *
+                    """,
+                    user_id, email, display_name, is_super_admin
+                )
+                logger.info(f"✓ Created/updated user: {email}")
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+            return None
+    
+    async def approve_user(self, user_id: str) -> bool:
+        """Approve user (super admin only)."""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "UPDATE users SET is_approved = TRUE WHERE user_id = $1",
+                    user_id
+                )
+                success = result == "UPDATE 1"
+                if success:
+                    logger.info(f"✓ Approved user: {user_id}")
+                return success
+        except Exception as e:
+            logger.error(f"Failed to approve user: {e}")
+            return False
+    
+    async def get_all_users(self) -> List[dict]:
+        """Get all users (super admin only)."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch("SELECT * FROM users ORDER BY created_at DESC")
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get users: {e}")
+            return []
+    
+    async def get_pending_users(self) -> List[dict]:
+        """Get users pending approval."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM users WHERE is_approved = FALSE ORDER BY created_at DESC"
+                )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get pending users: {e}")
+            return []
 
 
 # Global database manager instance
 _db_manager: Optional[DatabaseManager] = None
+
+
+def get_db_manager() -> DatabaseManager:
+    """Get the global database manager instance."""
+    global _db_manager
+    if _db_manager is None:
+        _db_manager = DatabaseManager()
+    return _db_manager
 
 
 async def get_db() -> DatabaseManager:

@@ -11,6 +11,7 @@ from loguru import logger
 from ...database import DatabaseManager, Account
 from ...core.tradelocker_client import TradeLockerClient
 from ...core.account_manager import get_account_manager
+from ...core.firebase_auth import get_current_user
 from ..main import get_db
 
 
@@ -112,15 +113,22 @@ class AccountResponse(BaseModel):
 
 
 @router.get("/", response_model=List[AccountResponse])
-async def get_all_accounts(db: DatabaseManager = Depends(get_db)):
+async def get_all_accounts(
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
-    Get all accounts.
+    Get all accounts for current user.
+    Super admin sees all accounts, regular users see only their own.
     
     Returns:
-        List of all accounts with full details
+        List of accounts with full details
     """
     try:
-        accounts = await db.get_all_accounts()
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        accounts = await db.get_accounts_by_user(user_id, is_super_admin)
         return [AccountResponse.from_account(acc) for acc in accounts]
     except Exception as e:
         logger.error(f"Failed to get accounts: {e}")
@@ -131,9 +139,14 @@ async def get_all_accounts(db: DatabaseManager = Depends(get_db)):
 
 
 @router.get("/{account_key}", response_model=AccountResponse)
-async def get_account(account_key: str, db: DatabaseManager = Depends(get_db)):
+async def get_account(
+    account_key: str,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Get a specific account by key.
+    User must own the account or be super admin.
     
     Args:
         account_key: Account key (format: email:account_id)
@@ -142,6 +155,17 @@ async def get_account(account_key: str, db: DatabaseManager = Depends(get_db)):
         Account details
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         account = await db.get_account(account_key)
         if not account:
             raise HTTPException(
@@ -160,7 +184,10 @@ async def get_account(account_key: str, db: DatabaseManager = Depends(get_db)):
 
 
 @router.post("/discover", response_model=DiscoverAccountsResponse)
-async def discover_accounts(request: DiscoverAccountsRequest):
+async def discover_accounts(
+    request: DiscoverAccountsRequest,
+    user: dict = Depends(get_current_user)
+):
     """
     Discover TradeLocker accounts for given credentials without adding them to database.
     
@@ -219,7 +246,11 @@ async def discover_accounts(request: DiscoverAccountsRequest):
 
 
 @router.post("/", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
-async def create_account(account_data: AccountCreate, db: DatabaseManager = Depends(get_db)):
+async def create_account(
+    account_data: AccountCreate,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Create a new account.
     
@@ -230,6 +261,8 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
         Created account details
     """
     try:
+        user_id = user['user_id']
+        
         # Create account key
         account_key = f"{account_data.credential_key}:{account_data.tl_account_id}"
         
@@ -251,8 +284,8 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
             risk_profile_id=account_data.risk_profile_id
         )
         
-        # Add to database
-        success = await db.add_account(account)
+        # Add to database with user_id
+        success = await db.add_account(account, user_id=user_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -290,7 +323,11 @@ async def create_account(account_data: AccountCreate, db: DatabaseManager = Depe
 
 
 @router.post("/bulk-add", response_model=BulkAddAccountsResponse, status_code=status.HTTP_201_CREATED)
-async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager = Depends(get_db)):
+async def bulk_add_accounts(
+    request: BulkAddAccountsRequest,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Add multiple TradeLocker accounts at once.
     Only adds NEW accounts - skips existing ones without modifying them.
@@ -302,6 +339,8 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
         Lists of added, skipped (already exist), and failed accounts
     """
     try:
+        user_id = user['user_id']
+        
         logger.info(f"Bulk adding {len(request.account_ids)} account(s) for {request.email} on {request.prop_firm or 'default'} ({request.server})")
         
         # Create temporary client to fetch account details (not bound to specific account)
@@ -374,8 +413,8 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
                     risk_profile_id=None  # Use default
                 )
                 
-                # Add to database
-                add_success = await db.add_account(account)
+                # Add to database with user_id
+                add_success = await db.add_account(account, user_id=user_id)
                 if add_success:
                     logger.info(f"  ✓ Added account: {account_key} (${balance:,.2f})")
                     added.append(account_key)
@@ -430,7 +469,8 @@ async def bulk_add_accounts(request: BulkAddAccountsRequest, db: DatabaseManager
 async def update_account(
     account_key: str,
     account_data: AccountUpdate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Update an account.
@@ -443,6 +483,17 @@ async def update_account(
         Updated account details
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         # Get existing account
         account = await db.get_account(account_key)
         if not account:
@@ -483,7 +534,11 @@ async def update_account(
 
 
 @router.delete("/{account_key}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_account(account_key: str, db: DatabaseManager = Depends(get_db)):
+async def delete_account(
+    account_key: str,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Delete an account.
     
@@ -491,6 +546,17 @@ async def delete_account(account_key: str, db: DatabaseManager = Depends(get_db)
         account_key: Account key
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         # Check if account exists
         account = await db.get_account(account_key)
         if not account:
@@ -520,7 +586,11 @@ async def delete_account(account_key: str, db: DatabaseManager = Depends(get_db)
 
 
 @router.post("/{account_key}/pause", response_model=AccountResponse)
-async def pause_account(account_key: str, db: DatabaseManager = Depends(get_db)):
+async def pause_account(
+    account_key: str,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Pause an account (stop opening new trades).
     
@@ -531,6 +601,17 @@ async def pause_account(account_key: str, db: DatabaseManager = Depends(get_db))
         Updated account details
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         success = await db.update_account_paused(account_key, True)
         if not success:
             raise HTTPException(
@@ -553,7 +634,11 @@ async def pause_account(account_key: str, db: DatabaseManager = Depends(get_db))
 
 
 @router.post("/{account_key}/resume", response_model=AccountResponse)
-async def resume_account(account_key: str, db: DatabaseManager = Depends(get_db)):
+async def resume_account(
+    account_key: str,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Resume an account (allow opening new trades).
     
@@ -564,6 +649,17 @@ async def resume_account(account_key: str, db: DatabaseManager = Depends(get_db)
         Updated account details
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         success = await db.update_account_paused(account_key, False)
         if not success:
             raise HTTPException(
@@ -594,7 +690,8 @@ class PayoutResetRequest(BaseModel):
 async def reset_payout(
     account_key: str,
     reset_data: PayoutResetRequest,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Reset account after payout withdrawal.
@@ -610,6 +707,17 @@ async def reset_payout(
         Updated account details
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         # Check if account exists
         account = await db.get_account(account_key)
         if not account:

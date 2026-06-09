@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 from ...database import DatabaseManager, Channel
+from ...core.firebase_auth import get_current_user, require_super_admin
 from ..main import get_db
 
 
@@ -55,9 +56,13 @@ class ChannelResponse(BaseModel):
 
 
 @router.get("/", response_model=List[ChannelResponse])
-async def get_all_channels(db: DatabaseManager = Depends(get_db)):
+async def get_all_channels(
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Get all channels.
+    All users can view channels.
     
     Returns:
         List of all channels
@@ -74,9 +79,14 @@ async def get_all_channels(db: DatabaseManager = Depends(get_db)):
 
 
 @router.get("/{channel_id}", response_model=ChannelResponse)
-async def get_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+async def get_channel(
+    channel_id: int,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Get a specific channel by ID.
+    All users can view channels.
     
     Args:
         channel_id: Numeric Telegram channel ID
@@ -103,9 +113,14 @@ async def get_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
 
 
 @router.post("/", response_model=ChannelResponse, status_code=status.HTTP_201_CREATED)
-async def create_channel(channel_data: ChannelCreate, db: DatabaseManager = Depends(get_db)):
+async def create_channel(
+    channel_data: ChannelCreate,
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
+):
     """
     Create a new channel.
+    **Super admin only.**
     
     Args:
         channel_data: Channel creation data
@@ -151,9 +166,14 @@ async def create_channel(channel_data: ChannelCreate, db: DatabaseManager = Depe
 
 
 @router.post("/{channel_id}/enable", response_model=ChannelResponse)
-async def enable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+async def enable_channel(
+    channel_id: int,
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
+):
     """
     Enable a channel (start listening to messages).
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID
@@ -184,9 +204,14 @@ async def enable_channel(channel_id: int, db: DatabaseManager = Depends(get_db))
 
 
 @router.post("/{channel_id}/disable", response_model=ChannelResponse)
-async def disable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+async def disable_channel(
+    channel_id: int,
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
+):
     """
     Disable a channel (stop listening to messages).
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID
@@ -220,10 +245,12 @@ async def disable_channel(channel_id: int, db: DatabaseManager = Depends(get_db)
 async def update_channel(
     channel_id: int,
     channel_data: ChannelUpdate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Update an existing channel.
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID
@@ -285,11 +312,13 @@ async def update_channel(
 async def patch_channel(
     channel_id: int,
     channel_data: ChannelUpdate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Partially update a channel (PATCH endpoint).
     Same as PUT but more explicit about partial updates.
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID
@@ -298,13 +327,18 @@ async def patch_channel(
     Returns:
         Updated channel details
     """
-    return await update_channel(channel_id, channel_data, db)
+    return await update_channel(channel_id, channel_data, db, admin)
 
 
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_channel(channel_id: int, db: DatabaseManager = Depends(get_db)):
+async def delete_channel(
+    channel_id: int,
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
+):
     """
     Delete a channel and all related data.
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID

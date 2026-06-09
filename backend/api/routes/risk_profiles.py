@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 from ...database import DatabaseManager, RiskProfile
+from ...core.firebase_auth import get_current_user, require_super_admin
 from ..main import get_db
 
 
@@ -77,10 +78,20 @@ class RiskProfileResponse(BaseModel):
 
 
 @router.get("/", response_model=List[RiskProfileResponse])
-async def get_all_risk_profiles(db: DatabaseManager = Depends(get_db)):
-    """Get all risk profiles."""
+async def get_all_risk_profiles(
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get all risk profiles for current user.
+    Regular users see default + their custom profiles.
+    Super admin sees all profiles.
+    """
     try:
-        profiles = await db.get_all_risk_profiles()
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        profiles = await db.get_risk_profiles_by_user(user_id, is_super_admin)
         return [RiskProfileResponse.model_validate(p) for p in profiles]
     except Exception as e:
         logger.error(f"Failed to get risk profiles: {e}")
@@ -91,8 +102,11 @@ async def get_all_risk_profiles(db: DatabaseManager = Depends(get_db)):
 
 
 @router.get("/default", response_model=RiskProfileResponse)
-async def get_default_risk_profile(db: DatabaseManager = Depends(get_db)):
-    """Get the default risk profile."""
+async def get_default_risk_profile(
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Get the default risk profile. Available to all users."""
     try:
         profile = await db.get_default_risk_profile()
         if not profile:
@@ -112,9 +126,24 @@ async def get_default_risk_profile(db: DatabaseManager = Depends(get_db)):
 
 
 @router.get("/{profile_id}", response_model=RiskProfileResponse)
-async def get_risk_profile(profile_id: int, db: DatabaseManager = Depends(get_db)):
-    """Get a specific risk profile by ID."""
+async def get_risk_profile(
+    profile_id: int,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Get a specific risk profile by ID. User must have access."""
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Verify access
+        has_access = await db.verify_risk_profile_access(profile_id, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this risk profile"
+            )
+        
         profile = await db.get_risk_profile(profile_id)
         if not profile:
             raise HTTPException(
@@ -135,10 +164,25 @@ async def get_risk_profile(profile_id: int, db: DatabaseManager = Depends(get_db
 @router.post("/", response_model=RiskProfileResponse, status_code=status.HTTP_201_CREATED)
 async def create_risk_profile(
     profile_data: RiskProfileCreate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
-    """Create a new risk profile."""
+    """
+    Create a new risk profile.
+    Regular users can only create non-default profiles.
+    Super admin can create any profile including defaults.
+    """
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Only super admin can create default profiles
+        if profile_data.is_default and not is_super_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super admin can create default profiles"
+            )
+        
         # Create RiskProfile object
         profile = RiskProfile(
             profile_id=0,  # Will be assigned by database
@@ -159,8 +203,8 @@ async def create_risk_profile(
             notes=profile_data.notes
         )
         
-        # Add to database
-        profile_id = await db.add_risk_profile(profile)
+        # Add to database with user_id (None for default profiles)
+        profile_id = await db.add_risk_profile(profile, user_id=None if profile_data.is_default else user_id)
         if not profile_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -169,7 +213,7 @@ async def create_risk_profile(
         
         # Get created profile
         created_profile = await db.get_risk_profile(profile_id)
-        logger.info(f"✓ Created risk profile: {profile_data.profile_name} (ID: {profile_id})")
+        logger.info(f"✓ Created risk profile: {profile_data.profile_name} (ID: {profile_id}, user: {user_id})")
         return RiskProfileResponse.model_validate(created_profile)
         
     except HTTPException:
@@ -186,10 +230,18 @@ async def create_risk_profile(
 async def update_risk_profile(
     profile_id: int,
     profile_data: RiskProfileUpdate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
-    """Update an existing risk profile."""
+    """
+    Update an existing risk profile.
+    Regular users can only edit their own profiles.
+    Super admin can edit any profile including default.
+    """
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
         # Get existing profile
         existing = await db.get_risk_profile(profile_id)
         if not existing:
@@ -198,11 +250,33 @@ async def update_risk_profile(
                 detail=f"Risk profile not found: {profile_id}"
             )
         
+        # Check if this is the default profile
+        if existing.is_default and not is_super_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super admin can edit default profile"
+            )
+        
+        # Verify access for non-default profiles
+        if not existing.is_default:
+            has_access = await db.verify_risk_profile_access(profile_id, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this risk profile"
+                )
+        
         # Build update dict with only provided fields
         updates = {}
         if profile_data.profile_name is not None:
             updates['profile_name'] = profile_data.profile_name
         if profile_data.is_default is not None:
+            # Only super admin can change is_default flag
+            if not is_super_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only super admin can change default status"
+                )
             updates['is_default'] = profile_data.is_default
         if profile_data.max_risk_per_trade_pct is not None:
             updates['max_risk_per_trade_pct'] = profile_data.max_risk_per_trade_pct
@@ -258,30 +332,59 @@ async def update_risk_profile(
 async def patch_risk_profile(
     profile_id: int,
     profile_data: RiskProfileUpdate,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Partially update a risk profile (PATCH endpoint).
     Same as PUT but more explicit about partial updates.
     """
-    return await update_risk_profile(profile_id, profile_data, db)
+    return await update_risk_profile(profile_id, profile_data, db, user)
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_risk_profile(profile_id: int, db: DatabaseManager = Depends(get_db)):
+async def delete_risk_profile(
+    profile_id: int,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
     Delete a risk profile.
-    
-    Cannot delete:
-    - Default profile
-    - Profiles in use by accounts
+    Regular users can only delete their own profiles.
+    Cannot delete default profile or profiles in use by accounts.
     """
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Get profile
+        profile = await db.get_risk_profile(profile_id)
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Risk profile not found: {profile_id}"
+            )
+        
+        # Cannot delete default profile
+        if profile.is_default:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete default profile"
+            )
+        
+        # Verify access
+        has_access = await db.verify_risk_profile_access(profile_id, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this risk profile"
+            )
+        
         success = await db.delete_risk_profile(profile_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete: profile is default or in use by accounts"
+                detail="Cannot delete: profile is in use by accounts"
             )
         
         logger.info(f"✓ Deleted risk profile ID {profile_id}")

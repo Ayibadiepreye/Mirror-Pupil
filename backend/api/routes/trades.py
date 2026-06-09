@@ -14,6 +14,7 @@ import io
 from ...database import DatabaseManager, ActiveTrade
 from ...core.trade_executor import TradeExecutor
 from ...core.account_manager import get_account_manager
+from ...core.firebase_auth import get_current_user
 from ..main import get_db
 
 
@@ -237,16 +238,23 @@ async def take_partial_profit(
 
 
 @router.get("/active", response_model=List[ActiveTradeResponse])
-async def get_all_active_trades(db: DatabaseManager = Depends(get_db)):
+async def get_all_active_trades(
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
     """
-    Get all active trades across all accounts with live P&L.
+    Get all active trades for current user with live P&L.
+    Super admin sees all accounts, regular users see only their own.
     
     Returns:
-        List of all active trades
+        List of active trades
     """
     try:
-        # Get all accounts
-        accounts = await db.get_all_accounts()
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Get accounts based on user role
+        accounts = await db.get_accounts_by_user(user_id, is_super_admin)
         
         # Get active trades for each account
         all_trades = []
@@ -298,10 +306,12 @@ async def get_all_active_trades(db: DatabaseManager = Depends(get_db)):
 @router.get("/active/{account_key}", response_model=List[ActiveTradeResponse])
 async def get_active_trades_for_account(
     account_key: str,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Get active trades for a specific account with live P&L.
+    User must own the account or be super admin.
     
     Args:
         account_key: Account key
@@ -310,6 +320,17 @@ async def get_active_trades_for_account(
         List of active trades for the account
     """
     try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
         trades = await db.get_active_trades(account_key)
         
         # Enrich with live P&L
@@ -335,6 +356,8 @@ async def get_active_trades_for_account(
             # Continue without P&L data
         
         return [ActiveTradeResponse.model_validate(t) for t in trades]
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get active trades for {account_key}: {e}")
         raise HTTPException(

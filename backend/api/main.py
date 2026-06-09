@@ -65,7 +65,7 @@ def get_executor() -> TradeExecutor:
 
 
 # Import routes AFTER defining dependencies
-from .routes import accounts, channels, risk_profiles, trades, bot_control, notifications
+from .routes import accounts, channels, risk_profiles, trades, bot_control, notifications, users
 from .websocket import router as websocket_router
 
 
@@ -246,6 +246,7 @@ app.include_router(risk_profiles.router, prefix="/api/risk-profiles", tags=["Ris
 app.include_router(trades.router, prefix="/api/trades", tags=["Trades"])
 app.include_router(bot_control.router, prefix="/api/bot", tags=["Bot Control"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(websocket_router, prefix="/ws", tags=["WebSocket"])
 
 

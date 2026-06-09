@@ -9,6 +9,7 @@ from loguru import logger
 
 from ...database import DatabaseManager
 from ...core.trade_executor import TradeExecutor
+from ...core.firebase_auth import require_super_admin
 from ..main import get_db, get_executor
 
 
@@ -43,9 +44,13 @@ class ForceCloseRequest(BaseModel):
 
 
 @router.get("/status", response_model=BotStatusResponse)
-async def get_bot_status(db: DatabaseManager = Depends(get_db)):
+async def get_bot_status(
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
+):
     """
     Get current bot status.
+    **Super admin only.**
     
     Returns:
         Bot status information
@@ -91,10 +96,12 @@ async def get_bot_status(db: DatabaseManager = Depends(get_db)):
 @router.post("/control")
 async def control_bot(
     request: BotControlRequest,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Control bot (start/stop).
+    **Super admin only.**
     
     Args:
         request: Control action request
@@ -127,10 +134,12 @@ async def control_bot(
 @router.post("/force-close-all")
 async def force_close_all_positions(
     db: DatabaseManager = Depends(get_db),
-    executor: TradeExecutor = Depends(get_executor)
+    executor: TradeExecutor = Depends(get_executor),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Force close all open positions across all accounts.
+    **Super admin only.**
     
     Returns:
         Number of positions closed
@@ -183,10 +192,12 @@ async def force_close_all_positions(
 async def force_close_account_positions(
     account_key: str,
     db: DatabaseManager = Depends(get_db),
-    executor: TradeExecutor = Depends(get_executor)
+    executor: TradeExecutor = Depends(get_executor),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Force close all open positions for a specific account.
+    **Super admin only.**
     
     Args:
         account_key: Account key
@@ -237,10 +248,12 @@ async def force_close_account_positions(
 @router.post("/skip-next-signal/{channel_id}")
 async def skip_next_signal(
     channel_id: int,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Skip the next signal from a specific channel.
+    **Super admin only.**
     
     Args:
         channel_id: Channel ID
@@ -279,10 +292,12 @@ async def skip_next_signal(
 @router.post("/settings/weekend-trading")
 async def toggle_weekend_trading(
     request: ToggleRequest,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Toggle weekend trading setting.
+    **Super admin only.**
     
     When enabled:
     - Allows new signals on Saturday/Sunday
@@ -323,10 +338,12 @@ async def toggle_weekend_trading(
 @router.post("/settings/eod-trading")
 async def toggle_eod_trading(
     request: ToggleRequest,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    admin: dict = Depends(require_super_admin)
 ):
     """
     Toggle EOD trading setting.
+    **Super admin only.**
     
     When enabled:
     - Skips 4:45 PM EST force close
