@@ -11,7 +11,6 @@ from datetime import datetime
 
 from ..database import DatabaseManager, ActiveTrade
 from .account_manager import get_account_manager
-from .notification_service import get_notification_service
 
 
 class PositionReconciliationMonitor:
@@ -29,11 +28,18 @@ class PositionReconciliationMonitor:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.account_manager = get_account_manager()
-        self.notification_service = get_notification_service(db)
+        self.notification_service = None  # Lazy-loaded to avoid circular import
         self.monitor_task: Optional[asyncio.Task] = None
         self.poll_interval = 60  # Check every 60 seconds
         
         logger.info("Initialized PositionReconciliationMonitor")
+    
+    def _get_notification_service(self):
+        """Lazy-load notification service to avoid circular import."""
+        if self.notification_service is None:
+            from .notification_service import get_notification_service
+            self.notification_service = get_notification_service(self.db)
+        return self.notification_service
     
     async def start_monitoring(self):
         """Start background monitoring task."""
@@ -218,7 +224,7 @@ class PositionReconciliationMonitor:
             )
             
             # Send notification for trade closure
-            await self.notification_service.trade_closed(
+            await self._get_notification_service().trade_closed(
                 account_key=account_key,
                 symbol=trade.symbol,
                 pnl=pnl,

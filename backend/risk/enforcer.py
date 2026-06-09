@@ -9,7 +9,6 @@ from loguru import logger
 
 from ..database import DatabaseManager, Account, RiskProfile, ActiveTrade
 from .calculator import RiskCalculator, calculate_price_delta, get_risk_calculator
-from ..core.notification_service import get_notification_service
 
 
 class RiskEnforcer:
@@ -26,10 +25,17 @@ class RiskEnforcer:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self.calculator = get_risk_calculator()
-        self.notification_service = get_notification_service(db)
+        self.notification_service = None  # Lazy-loaded to avoid circular import
         self.breach_check_task: Optional[asyncio.Task] = None
         
         logger.info("Initialized RiskEnforcer")
+    
+    def _get_notification_service(self):
+        """Lazy-load notification service to avoid circular import."""
+        if self.notification_service is None:
+            from ..core.notification_service import get_notification_service
+            self.notification_service = get_notification_service(self.db)
+        return self.notification_service
     
     async def start_breach_monitoring(self):
         """Start background breach monitoring task (runs every 60 seconds)."""
@@ -285,7 +291,7 @@ class RiskEnforcer:
             
             # Send breach notification
             loss_pct = ((account.daily_start_balance - current_equity) / account.daily_start_balance) * 100
-            await self.notification_service.risk_breach(
+            await self._get_notification_service().risk_breach(
                 account_key=account.account_key,
                 breach_type="Daily Loss",
                 current_value=loss_pct,
@@ -311,7 +317,7 @@ class RiskEnforcer:
             
             # Send breach notification
             loss_pct = ((account.initial_balance - current_equity) / account.initial_balance) * 100
-            await self.notification_service.risk_breach(
+            await self._get_notification_service().risk_breach(
                 account_key=account.account_key,
                 breach_type="Overall Drawdown",
                 current_value=loss_pct,

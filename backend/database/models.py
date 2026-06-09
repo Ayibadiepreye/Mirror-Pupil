@@ -11,8 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 class Channel(BaseModel):
     """Signal source channel."""
     channel_id: int
-    channel_name: str  # Original identifier
-    display_name: Optional[str] = None  # Custom GUI name
+    display_name: str  # Custom GUI name (required)
     signal_prefix: str
     entry_logic_module: str
     management_logic_module: str

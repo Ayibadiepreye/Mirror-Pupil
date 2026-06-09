@@ -10,7 +10,6 @@ import os
 
 from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
-from .notification_service import get_notification_service
 from ..database import DatabaseManager, ActiveTrade
 from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
 
@@ -45,6 +44,7 @@ class TradeExecutor:
     async def initialize(self):
         """Initialize risk enforcer and notification service (async)."""
         from ..risk import get_risk_enforcer
+        from .notification_service import get_notification_service  # Lazy import to avoid circular dependency
         self.risk_enforcer = await get_risk_enforcer(self.db)
         self.notification_service = get_notification_service(self.db)
     
