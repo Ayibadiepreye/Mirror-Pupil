@@ -15,9 +15,24 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import type { Account } from "@/lib/mp/types";
 
 type FilterStatus = "all" | "active" | "paused" | "breached";
+
+const getDrawdownColor = (pct: number, limit: number) => {
+  const ratio = pct / limit;
+  if (ratio > 0.9) return "text-red-500";
+  if (ratio > 0.7) return "text-yellow-500";
+  return "text-green-500";
+};
+
+const getConsistencyColor = (score: number | null) => {
+  if (!score) return "text-gray-400";
+  if (score >= 20) return "text-red-500";
+  if (score >= 18) return "text-yellow-500";
+  return "text-green-500";
+};
 
 export function AccountsPage() {
   const qc = useQueryClient();
@@ -147,6 +162,48 @@ export function AccountsPage() {
                 <div><div className="uppercase tracking-wider">Profile</div><div className="text-[color:var(--mp-text)] truncate">{profile?.profile_name ?? "—"}</div></div>
                 <div><div className="uppercase tracking-wider">Lot ovr.</div><div className="text-[color:var(--mp-text)] font-mono">{a.lot_size_override ?? "—"}</div></div>
               </div>
+              
+              {/* Daily Drawdown */}
+              <div className="mt-3">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-[color:var(--mp-text-dim)]">Daily Drawdown</span>
+                  <span className={getDrawdownColor(a.daily_drawdown_pct ?? 0, a.daily_loss_limit_pct ?? 5)}>
+                    {(a.daily_drawdown_pct ?? 0).toFixed(2)}% / {(a.daily_loss_limit_pct ?? 5).toFixed(0)}%
+                  </span>
+                </div>
+                <Progress value={Math.min(((a.daily_drawdown_pct ?? 0) / (a.daily_loss_limit_pct ?? 5)) * 100, 100)} className="h-1.5" />
+              </div>
+              
+              {/* Max Drawdown */}
+              <div className="mt-2">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-[color:var(--mp-text-dim)]">Max Drawdown</span>
+                  <span className={getDrawdownColor(a.overall_drawdown_pct ?? 0, a.overall_loss_limit_pct ?? 10)}>
+                    {(a.overall_drawdown_pct ?? 0).toFixed(2)}% / {(a.overall_loss_limit_pct ?? 10).toFixed(0)}%
+                  </span>
+                </div>
+                <Progress value={Math.min(((a.overall_drawdown_pct ?? 0) / (a.overall_loss_limit_pct ?? 10)) * 100, 100)} className="h-1.5" />
+              </div>
+              
+              {/* Consistency Score */}
+              <div className="mt-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[color:var(--mp-text-dim)]">Consistency Score</span>
+                  <span className={getConsistencyColor(a.consistency_score ?? null)}>
+                    {a.consistency_score ? `${a.consistency_score.toFixed(1)}%` : 'N/A'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Profitable Days */}
+              <div className="mt-2">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-[color:var(--mp-text-dim)]">Profitable Days</span>
+                  <span className="text-[color:var(--mp-text)]">{a.profitable_days_count ?? 0} / {a.required_profitable_days ?? 5}</span>
+                </div>
+                <Progress value={Math.min(((a.profitable_days_count ?? 0) / (a.required_profitable_days ?? 5)) * 100, 100)} className="h-1.5" />
+              </div>
+              
               <div className="mt-4 flex flex-wrap gap-2">
                 {a.paused ? (
                   <Button size="sm" variant="outline" onClick={() => resumeM.mutate(a.account_key)} className="gap-1.5">
