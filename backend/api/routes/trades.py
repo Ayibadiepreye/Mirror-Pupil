@@ -57,10 +57,12 @@ class ManualActionRequest(BaseModel):
 async def close_trade_manually(
     trade_id: int,
     action: ManualActionRequest,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Manually close an active trade.
+    User must own the account or be super admin.
     
     Args:
         trade_id: Trade ID
@@ -76,6 +78,17 @@ async def close_trade_manually(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Trade not found: {trade_id}"
+            )
+        
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(trade.account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
             )
         
         # Execute close action through TradeExecutor
@@ -395,10 +408,12 @@ class TradeHistoryResponse(BaseModel):
 @router.get("/history/export")
 async def export_trade_history(
     account_key: str | None = None,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Export trade history as CSV file.
+    Regular users export only their trades, super admin can export all.
     
     Args:
         account_key: Optional account filter
@@ -407,7 +422,24 @@ async def export_trade_history(
         CSV file download
     """
     try:
-        history = await db.get_trade_history(account_key=account_key, limit=10000)
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # If account_key specified, verify ownership
+        if account_key:
+            has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this account"
+                )
+        
+        history = await db.get_trade_history(
+            account_key=account_key,
+            user_id=user_id,
+            is_super_admin=is_super_admin,
+            limit=10000
+        )
         
         # Create CSV in memory
         output = io.StringIO()
@@ -449,6 +481,8 @@ async def export_trade_history(
             headers={"Content-Disposition": f"attachment; filename=trade_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to export trade history: {e}")
         raise HTTPException(
@@ -462,10 +496,12 @@ async def get_trade_history(
     account_key: str | None = None,
     limit: int = 100,
     offset: int = 0,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
     Get trade history with optional filtering.
+    Regular users see only their trades, super admin sees all.
     
     Args:
         account_key: Optional account key filter
@@ -476,8 +512,22 @@ async def get_trade_history(
         List of closed trades from history
     """
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # If account_key specified, verify ownership
+        if account_key:
+            has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this account"
+                )
+        
         history = await db.get_trade_history(
             account_key=account_key,
+            user_id=user_id,
+            is_super_admin=is_super_admin,
             limit=limit,
             offset=offset
         )

@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginWithGoogle, loginWithEmail, registerWithEmail } from "@/lib/firebase";
-import { usersApi } from "@/lib/mp/api";
+import { signInWithGoogle, signInWithPassword } from "@/lib/mp/auth";
+import { registerWithEmail } from "@/lib/firebase";
 import logoUrl from "@/assets/logo.svg";
 
 export function LoginPage() {
@@ -18,23 +18,8 @@ export function LoginPage() {
   const onGoogle = async () => {
     setBusy(true);
     try {
-      await loginWithGoogle();
-      
-      // Create/fetch user record from backend
-      try {
-        const userData = await usersApi.me();
-        if (!userData.is_approved) {
-          toast.warning("Account pending admin approval");
-          // Still allow navigation to show pending message
-        } else {
-          toast.success("Signed in with Google");
-        }
-      } catch (error: any) {
-        if (error.response?.status === 403) {
-          toast.warning("Account pending admin approval");
-        }
-      }
-      
+      await signInWithGoogle(); // This now handles session setting
+      toast.success("Signed in with Google");
       navigate({ to: "/" });
     } catch (e: any) {
       toast.error(e.message || "Google sign-in failed");
@@ -49,26 +34,13 @@ export function LoginPage() {
     try {
       if (mode === "signup") {
         await registerWithEmail(email, password);
-        toast.success("Account created! Pending admin approval.");
+        toast.success("Account created! Please sign in.");
+        setMode("signin");
       } else {
-        await loginWithEmail(email, password);
-        
-        // Check approval status
-        try {
-          const userData = await usersApi.me();
-          if (!userData.is_approved) {
-            toast.warning("Account pending admin approval");
-          } else {
-            toast.success("Signed in successfully");
-          }
-        } catch (error: any) {
-          if (error.response?.status === 403) {
-            toast.warning("Account pending admin approval");
-          }
-        }
+        await signInWithPassword(email, password); // This now handles session setting
+        toast.success("Signed in successfully");
+        navigate({ to: "/" });
       }
-      
-      navigate({ to: "/" });
     } catch (err: any) {
       toast.error(err.message || "Authentication failed");
     } finally {
