@@ -55,11 +55,7 @@ export function LoginPage() {
       {/* Backdrop glow */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-50"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 50% 0%, color-mix(in oklab, var(--mp-crimson) 40%, transparent), transparent 60%), radial-gradient(40% 35% at 80% 100%, color-mix(in oklab, var(--mp-red) 35%, transparent), transparent 70%)",
-        }}
+        className="pointer-events-none absolute inset-0 opacity-50 login-backdrop-glow"
       />
 
       <div className="relative w-full max-w-md">

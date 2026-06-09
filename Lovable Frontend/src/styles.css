@@ -141,3 +141,9 @@
   }
   ::-webkit-scrollbar-thumb:hover { background: var(--mp-crimson); }
 }
+
+/* Login page backdrop gradient */
+.login-backdrop-glow {
+  background: radial-gradient(60% 50% at 50% 0%, color-mix(in oklab, var(--mp-crimson) 40%, transparent), transparent 60%),
+              radial-gradient(40% 35% at 80% 100%, color-mix(in oklab, var(--mp-red) 35%, transparent), transparent 70%);
+}

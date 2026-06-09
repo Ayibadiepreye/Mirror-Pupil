@@ -55,10 +55,11 @@ export default function TradeHistoryPage() {
       
       {/* Filter */}
       <div className="card">
-        <label className="block text-sm font-medium text-kob-text mb-2">
+        <label htmlFor="account-filter" className="block text-sm font-medium text-kob-text mb-2">
           Filter by Account
         </label>
         <select
+          id="account-filter"
           value={selectedAccount}
           onChange={(e) => setSelectedAccount(e.target.value)}
           className="input w-full md:w-64"

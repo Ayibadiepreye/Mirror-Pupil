@@ -126,6 +126,8 @@ export default function Notifications() {
                 <button
                   onClick={() => deleteMutation.mutate(notification.notification_id)}
                   className="text-kob-text-dim hover:text-kob-text ml-3"
+                  aria-label="Delete notification"
+                  title="Delete notification"
                 >
                   <X size={18} />
                 </button>
@@ -182,6 +184,7 @@ export default function Notifications() {
                         onClick={() => markReadMutation.mutate(notification.notification_id)}
                         className="text-kob-text-dim hover:text-kob-text"
                         title="Mark as read"
+                        aria-label="Mark as read"
                       >
                         <CheckCheck size={18} />
                       </button>
@@ -190,6 +193,7 @@ export default function Notifications() {
                       onClick={() => deleteMutation.mutate(notification.notification_id)}
                       className="text-kob-text-dim hover:text-red-400"
                       title="Delete"
+                      aria-label="Delete"
                     >
                       <X size={18} />
                     </button>
