@@ -26,6 +26,7 @@ class RiskProfile(BaseModel):
     profile_id: Optional[int] = None
     profile_name: str
     is_default: bool = False
+    user_id: Optional[str] = None  # Owner user ID (None for default profile)
     max_risk_per_trade_pct: float = 1.0
     daily_loss_pct: float = 3.0
     daily_trailing: bool = True
@@ -52,6 +53,7 @@ class Account(BaseModel):
     tl_server: str = "live"  # Environment: "live" or "demo"
     tl_prop_firm: str = ""  # Broker/Prop firm name (e.g., "Blue Guardian")
     display_name: Optional[str] = None  # Custom GUI name
+    user_id: Optional[str] = None  # Owner user ID
     lot_size_override: Optional[float] = None  # Per-account lot size
     initial_balance: Optional[float] = None
     current_balance: Optional[float] = None
