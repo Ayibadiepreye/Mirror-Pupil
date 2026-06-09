@@ -175,7 +175,11 @@ export function ActiveTradesPage() {
                     <Stat label="TP" value={t.tp != null ? formatPrice(t.tp, t.symbol) : "—"} />
                     <Stat label="Lots" value={t.lot_size.toFixed(2)} />
                     <Stat label="Risk" value={t.risk_usd != null ? formatCurrency(t.risk_usd) : "—"} />
-                    <Stat label="Signal" value={t.signal_id} />
+                    <Stat 
+                      label="P&L" 
+                      value={t.current_pnl != null ? formatCurrency(t.current_pnl) : "—"} 
+                      className={t.current_pnl != null && t.current_pnl !== 0 ? (t.current_pnl > 0 ? "text-[color:var(--mp-success)]" : "text-[color:var(--mp-danger)]") : undefined}
+                    />
                   </div>
 
                   <div className="text-[10px] font-mono text-[color:var(--mp-text-dim)] truncate">{shortenKey(t.account_key)}</div>
@@ -210,11 +214,11 @@ export function ActiveTradesPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function Stat({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
   return (
     <div className="rounded-md bg-white/5 px-2 py-1.5">
       <div className="text-[9px] uppercase tracking-wider text-[color:var(--mp-text-dim)]">{label}</div>
-      <div className="font-mono text-[color:var(--mp-text)] truncate">{value}</div>
+      <div className={`font-mono truncate ${className || "text-[color:var(--mp-text)]"}`}>{value}</div>
     </div>
   );
 }
