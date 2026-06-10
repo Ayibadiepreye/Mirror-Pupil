@@ -350,6 +350,54 @@ class DatabaseManager:
             )
             return [dict(row) for row in rows]
     
+    async def update_user_fcm_token(self, user_id: str, fcm_token: str) -> bool:
+        """Update user's FCM token for push notifications."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE users SET fcm_token = $1 WHERE user_id = $2",
+                    fcm_token, user_id
+                )
+                logger.debug(f"✓ Updated FCM token for user: {user_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update FCM token: {e}")
+            return False
+    
+    async def get_users_by_account(self, account_key: str) -> List[dict]:
+        """Get all users who own a specific account."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM accounts WHERE account_key = $1",
+                    account_key
+                )
+                if not rows:
+                    return []
+                user_ids = [dict(row)['user_id'] for row in rows if dict(row).get('user_id')]
+                if not user_ids:
+                    return []
+                users = await conn.fetch(
+                    "SELECT * FROM users WHERE user_id = ANY($1::text[])",
+                    user_ids
+                )
+                return [dict(row) for row in users]
+        except Exception as e:
+            logger.error(f"Failed to get users by account: {e}")
+            return []
+    
+    async def get_all_users_with_fcm(self) -> List[dict]:
+        """Get all users who have FCM tokens registered."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT * FROM users WHERE fcm_token IS NOT NULL"
+                )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get users with FCM tokens: {e}")
+            return []
+    
     # ==================== ACCOUNT QUERIES ====================
     
     async def get_all_accounts(self) -> List[Account]:
