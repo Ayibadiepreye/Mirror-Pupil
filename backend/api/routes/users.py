@@ -141,3 +141,38 @@ async def approve_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to approve user: {str(e)}"
         )
+
+
+class FcmTokenRequest(BaseModel):
+    """Request to register FCM token."""
+    fcm_token: str
+
+
+@router.post("/register-fcm-token")
+async def register_fcm_token(
+    request: FcmTokenRequest,
+    user: dict = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db)
+):
+    """Register FCM token for push notifications."""
+    try:
+        user_id = user['user_id']
+        success = await db.update_user_fcm_token(user_id, request.fcm_token)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to register FCM token"
+            )
+        
+        logger.info(f"✓ Registered FCM token for user {user_id}")
+        return {"success": True, "message": "FCM token registered"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to register FCM token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register FCM token: {str(e)}"
+        )

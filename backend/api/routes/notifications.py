@@ -10,7 +10,9 @@ from datetime import datetime
 from loguru import logger
 
 from ...database import DatabaseManager
+from ...services.push_notifications import get_push_notification_service
 from ..main import get_db
+from ...core.firebase_auth import get_current_user
 
 
 router = APIRouter()
@@ -108,6 +110,29 @@ async def create_notification(
         # Get created notification
         notification = await db.get_notification(notification_id)
         logger.info(f"✓ Created notification: {notification_data.title}")
+        
+        # Send push notification to mobile devices
+        push_service = get_push_notification_service()
+        if notification_data.account_key:
+            # Get users who own this account
+            users = await db.get_users_by_account(notification_data.account_key)
+        else:
+            # System-wide notification - send to all users with FCM tokens
+            users = await db.get_all_users_with_fcm()
+        
+        fcm_tokens = [u['fcm_token'] for u in users if u.get('fcm_token')]
+        if fcm_tokens:
+            await push_service.send_to_multiple(
+                fcm_tokens=fcm_tokens,
+                title=notification_data.title,
+                body=notification_data.message,
+                notification_id=notification_id,
+                data={
+                    'category': notification_data.category,
+                    'severity': notification_data.severity,
+                }
+            )
+        
         return NotificationResponse(**notification)
         
     except HTTPException:
