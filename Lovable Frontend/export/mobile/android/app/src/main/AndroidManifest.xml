@@ -1,10 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.kirito.mirrorpupil">
     <application
-        android:label="mirror_pupil_mobile"
+        android:label="Mirror Pupil"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
-            android:name=".MainActivity"
+            android:name="com.kirito.mirrorpupil.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
