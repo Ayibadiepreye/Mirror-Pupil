@@ -409,7 +409,6 @@ interface ActiveTrade {
   entry_time: string // ISO 8601
   status: string
   risk_usd: number | null
-  current_pnl: number | null  // Live unrealized P&L from TradeLocker
   // ... more fields
 }
 
