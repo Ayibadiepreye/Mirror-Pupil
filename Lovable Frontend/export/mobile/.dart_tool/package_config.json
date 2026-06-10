@@ -87,9 +87,9 @@
     },
     {
       "name": "go_router",
-      "rootUri": "file:///C:/Users/bonni/AppData/Local/Pub/Cache/hosted/pub.dev/go_router-17.3.0",
+      "rootUri": "file:///C:/Users/bonni/AppData/Local/Pub/Cache/hosted/pub.dev/go_router-14.8.1",
       "packageUri": "lib/",
-      "languageVersion": "3.10"
+      "languageVersion": "3.4"
     },
     {
       "name": "http",
