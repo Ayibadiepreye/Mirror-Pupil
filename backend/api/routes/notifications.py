@@ -49,10 +49,13 @@ async def get_all_notifications(
     account_key: Optional[str] = None,
     unread_only: bool = False,
     limit: int = 100,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
-    Get all notifications with optional filtering.
+    Get all notifications for current user.
+    Regular users see notifications for their accounts only.
+    Super admin sees all notifications.
     
     Args:
         account_key: Optional account filter
@@ -63,12 +66,28 @@ async def get_all_notifications(
         List of notifications
     """
     try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # If account_key specified, verify ownership
+        if account_key:
+            has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this account"
+                )
+        
         notifications = await db.get_notifications(
             account_key=account_key,
+            user_id=user_id,
+            is_super_admin=is_super_admin,
             unread_only=unread_only,
             limit=limit
         )
         return [NotificationResponse(**n) for n in notifications]
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get notifications: {e}")
         raise HTTPException(
@@ -148,10 +167,11 @@ async def create_notification(
 @router.patch("/{notification_id}/read", response_model=NotificationResponse)
 async def mark_notification_read(
     notification_id: int,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
-    Mark a notification as read.
+    Mark a notification as read. User must own the related account or be super admin.
     
     Args:
         notification_id: Notification ID
@@ -160,11 +180,31 @@ async def mark_notification_read(
         Updated notification
     """
     try:
-        success = await db.mark_notification_read(notification_id, True)
-        if not success:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Get notification to check ownership
+        notification = await db.get_notification(notification_id)
+        if not notification:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Notification not found: {notification_id}"
+            )
+        
+        # If notification has account_key, verify ownership
+        if notification.get('account_key'):
+            has_access = await db.verify_account_ownership(notification['account_key'], user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this notification"
+                )
+        
+        success = await db.mark_notification_read(notification_id, True)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to mark notification as read"
             )
         
         notification = await db.get_notification(notification_id)
@@ -183,10 +223,11 @@ async def mark_notification_read(
 @router.post("/mark-all-read")
 async def mark_all_notifications_read(
     account_key: Optional[str] = None,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
-    Mark all notifications as read.
+    Mark all notifications as read for current user.
     
     Args:
         account_key: Optional account filter
@@ -195,8 +236,22 @@ async def mark_all_notifications_read(
         Number of notifications marked as read
     """
     try:
-        count = await db.mark_all_notifications_read(account_key)
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # If account_key specified, verify ownership
+        if account_key:
+            has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this account"
+                )
+        
+        count = await db.mark_all_notifications_read(account_key, user_id, is_super_admin)
         return {"marked_read": count}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to mark all notifications as read: {e}")
         raise HTTPException(
@@ -208,20 +263,41 @@ async def mark_all_notifications_read(
 @router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_notification(
     notification_id: int,
-    db: DatabaseManager = Depends(get_db)
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
-    Delete a notification.
+    Delete a notification. User must own the related account or be super admin.
     
     Args:
         notification_id: Notification ID
     """
     try:
-        success = await db.delete_notification(notification_id)
-        if not success:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # Get notification to check ownership
+        notification = await db.get_notification(notification_id)
+        if not notification:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Notification not found: {notification_id}"
+            )
+        
+        # If notification has account_key, verify ownership
+        if notification.get('account_key'):
+            has_access = await db.verify_account_ownership(notification['account_key'], user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this notification"
+                )
+        
+        success = await db.delete_notification(notification_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete notification"
             )
         logger.info(f"✓ Deleted notification {notification_id}")
     except HTTPException:

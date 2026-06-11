@@ -1434,53 +1434,121 @@ class DatabaseManager:
     async def get_notifications(
         self,
         account_key: Optional[str] = None,
+        user_id: Optional[str] = None,
+        is_super_admin: bool = False,
         unread_only: bool = False,
         limit: int = 100
     ) -> List[Dict]:
-        """Get notifications with optional filtering."""
+        """
+        Get notifications with optional filtering and user isolation.
+        Regular users only see notifications for their accounts.
+        Super admin sees all notifications.
+        """
         try:
             async with self.pool.acquire() as conn:
-                if account_key:
-                    if unread_only:
-                        rows = await conn.fetch(
-                            """
-                            SELECT * FROM notifications
-                            WHERE account_key = $1 AND read = FALSE
-                            ORDER BY created_at DESC
-                            LIMIT $2
-                            """,
-                            account_key, limit
-                        )
+                # Super admin sees all notifications
+                if is_super_admin:
+                    if account_key:
+                        if unread_only:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE account_key = $1 AND read = FALSE
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_key, limit
+                            )
+                        else:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE account_key = $1
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_key, limit
+                            )
                     else:
-                        rows = await conn.fetch(
-                            """
-                            SELECT * FROM notifications
-                            WHERE account_key = $1
-                            ORDER BY created_at DESC
-                            LIMIT $2
-                            """,
-                            account_key, limit
-                        )
+                        if unread_only:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE read = FALSE
+                                ORDER BY created_at DESC
+                                LIMIT $1
+                                """,
+                                limit
+                            )
+                        else:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                ORDER BY created_at DESC
+                                LIMIT $1
+                                """,
+                                limit
+                            )
+                # Regular users - filter by their accounts only
                 else:
-                    if unread_only:
-                        rows = await conn.fetch(
-                            """
-                            SELECT * FROM notifications
-                            WHERE read = FALSE
-                            ORDER BY created_at DESC
-                            LIMIT $1
-                            """,
-                            limit
-                        )
+                    # Get user's account keys
+                    user_accounts = await conn.fetch(
+                        "SELECT account_key FROM accounts WHERE user_id = $1",
+                        user_id
+                    )
+                    account_keys = [row['account_key'] for row in user_accounts]
+                    
+                    if not account_keys:
+                        return []  # User has no accounts
+                    
+                    if account_key:
+                        # Specific account requested - verify it belongs to user
+                        if account_key not in account_keys:
+                            return []  # Access denied
+                        
+                        if unread_only:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE account_key = $1 AND read = FALSE
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_key, limit
+                            )
+                        else:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE account_key = $1
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_key, limit
+                            )
                     else:
-                        rows = await conn.fetch(
-                            """
-                            SELECT * FROM notifications
-                            ORDER BY created_at DESC
-                            LIMIT $1
-                            """,
-                            limit
-                        )
+                        # All notifications for user's accounts
+                        if unread_only:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE (account_key = ANY($1) OR account_key IS NULL) AND read = FALSE
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_keys, limit
+                            )
+                        else:
+                            rows = await conn.fetch(
+                                """
+                                SELECT * FROM notifications
+                                WHERE account_key = ANY($1) OR account_key IS NULL
+                                ORDER BY created_at DESC
+                                LIMIT $2
+                                """,
+                                account_keys, limit
+                            )
+                
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get notifications: {e}")
@@ -1512,19 +1580,61 @@ class DatabaseManager:
             logger.error(f"Failed to mark notification as read: {e}")
             return False
     
-    async def mark_all_notifications_read(self, account_key: Optional[str] = None) -> int:
-        """Mark all notifications as read. Returns count of updated notifications."""
+    async def mark_all_notifications_read(
+        self,
+        account_key: Optional[str] = None,
+        user_id: Optional[str] = None,
+        is_super_admin: bool = False
+    ) -> int:
+        """
+        Mark all notifications as read with user isolation.
+        Regular users can only mark their own account notifications as read.
+        Super admin can mark all as read.
+        """
         try:
             async with self.pool.acquire() as conn:
-                if account_key:
-                    result = await conn.execute(
-                        "UPDATE notifications SET read = TRUE WHERE account_key = $1 AND read = FALSE",
-                        account_key
-                    )
+                # Super admin can mark all as read
+                if is_super_admin:
+                    if account_key:
+                        result = await conn.execute(
+                            "UPDATE notifications SET read = TRUE WHERE account_key = $1 AND read = FALSE",
+                            account_key
+                        )
+                    else:
+                        result = await conn.execute(
+                            "UPDATE notifications SET read = TRUE WHERE read = FALSE"
+                        )
+                # Regular users - filter by their accounts only
                 else:
-                    result = await conn.execute(
-                        "UPDATE notifications SET read = TRUE WHERE read = FALSE"
+                    # Get user's account keys
+                    user_accounts = await conn.fetch(
+                        "SELECT account_key FROM accounts WHERE user_id = $1",
+                        user_id
                     )
+                    account_keys = [row['account_key'] for row in user_accounts]
+                    
+                    if not account_keys:
+                        return 0  # User has no accounts
+                    
+                    if account_key:
+                        # Specific account - verify ownership
+                        if account_key not in account_keys:
+                            return 0  # Access denied
+                        
+                        result = await conn.execute(
+                            "UPDATE notifications SET read = TRUE WHERE account_key = $1 AND read = FALSE",
+                            account_key
+                        )
+                    else:
+                        # All notifications for user's accounts
+                        result = await conn.execute(
+                            """
+                            UPDATE notifications SET read = TRUE 
+                            WHERE (account_key = ANY($1) OR account_key IS NULL) AND read = FALSE
+                            """,
+                            account_keys
+                        )
+                
                 # Extract count from result string like "UPDATE 5"
                 count = int(result.split()[-1]) if result else 0
                 logger.info(f"✓ Marked {count} notification(s) as read")
