@@ -120,6 +120,10 @@ function ChannelsTab() {
 function ChannelDialog({ open, initial, isEdit, onClose }: { open: boolean; initial: Channel; isEdit: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<Channel>(initial);
+  
+  const validEntryModules = ['billirichy.entry', 'firepips.entry'];
+  const validMgmtModules = ['billirichy.management', 'firepips.management'];
+  
   // Reset when initial changes
   if (open && form.channel_id !== initial.channel_id && !isEdit) {
     // noop — handled via key in parent if needed
@@ -148,7 +152,7 @@ function ChannelDialog({ open, initial, isEdit, onClose }: { open: boolean; init
           <div className="grid grid-cols-2 gap-3">
             <Field label="Entry logic module">
               <select
-                value={form.entry_logic_module}
+                value={validEntryModules.includes(form.entry_logic_module) ? form.entry_logic_module : validEntryModules[0]}
                 onChange={(e) => setForm({ ...form, entry_logic_module: e.target.value })}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -158,7 +162,7 @@ function ChannelDialog({ open, initial, isEdit, onClose }: { open: boolean; init
             </Field>
             <Field label="Management logic module">
               <select
-                value={form.management_logic_module}
+                value={validMgmtModules.includes(form.management_logic_module) ? form.management_logic_module : validMgmtModules[0]}
                 onChange={(e) => setForm({ ...form, management_logic_module: e.target.value })}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
