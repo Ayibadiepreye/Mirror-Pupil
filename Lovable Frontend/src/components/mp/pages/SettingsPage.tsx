@@ -41,8 +41,8 @@ export function SettingsPage() {
 function emptyChannel(): Channel {
   return {
     channel_id: 0, display_name: "", signal_prefix: "",
-    entry_logic_module: "logic.entry.standard",
-    management_logic_module: "logic.manage.trail_be",
+    entry_logic_module: "billirichy.entry",
+    management_logic_module: "billirichy.management",
     priority: 10, enabled: true, notes: null,
   };
 }
@@ -145,8 +145,28 @@ function ChannelDialog({ open, initial, isEdit, onClose }: { open: boolean; init
             <Field label="Signal prefix"><Input value={form.signal_prefix} onChange={(e) => setForm({ ...form, signal_prefix: e.target.value })} /></Field>
             <Field label="Priority"><Input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></Field>
           </div>
-          <Field label="Entry logic module"><Input value={form.entry_logic_module} onChange={(e) => setForm({ ...form, entry_logic_module: e.target.value })} /></Field>
-          <Field label="Management logic module"><Input value={form.management_logic_module} onChange={(e) => setForm({ ...form, management_logic_module: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Entry logic module">
+              <select
+                value={form.entry_logic_module}
+                onChange={(e) => setForm({ ...form, entry_logic_module: e.target.value })}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="billirichy.entry">billirichy.entry</option>
+                <option value="firepips.entry">firepips.entry</option>
+              </select>
+            </Field>
+            <Field label="Management logic module">
+              <select
+                value={form.management_logic_module}
+                onChange={(e) => setForm({ ...form, management_logic_module: e.target.value })}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="billirichy.management">billirichy.management</option>
+                <option value="firepips.management">firepips.management</option>
+              </select>
+            </Field>
+          </div>
           <Field label="Notes"><Textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} /></Field>
           <div className="flex items-center gap-2">
             <Switch checked={form.enabled} onCheckedChange={(v) => setForm({ ...form, enabled: v })} />
