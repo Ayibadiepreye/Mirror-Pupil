@@ -1,12 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Mirror Pupil Splash Screen with Theme Gradient -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+    <!-- Gradient background: base (#16161A) to app (#1E1E24) -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="135"
+                android:startColor="#16161A"
+                android:centerColor="#1A1A1F"
+                android:endColor="#1E1E24"
+                android:type="linear" />
+        </shape>
+    </item>
+    
+    <!-- Crimson glow effect behind logo -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#33B22222" />
+            <size
+                android:width="200dp"
+                android:height="200dp" />
+        </shape>
+    </item>
+    
+    <!-- Logo (will be added after icon generation) -->
+    <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@mipmap/ic_launcher" />
+    </item>
 </layer-list>
