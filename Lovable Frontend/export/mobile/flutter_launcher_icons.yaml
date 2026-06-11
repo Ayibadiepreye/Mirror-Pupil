@@ -1,16 +1,16 @@
 # Mirror Pupil - App Icon Configuration
-# Run: flutter pub run flutter_launcher_icons
+# Run: dart run flutter_launcher_icons
 
 flutter_launcher_icons:
   android: true
   ios: false
   
-  # Logo source
-  image_path: "assets/logo.svg"
+  # Logo source - Using PNG since SVG not supported by the tool
+  image_path: "assets/icon.png"
   
   # Adaptive icons (Android 8.0+)
   adaptive_icon_background: "#16161A"  # Mirror Pupil dark base color
-  adaptive_icon_foreground: "assets/logo.svg"
+  adaptive_icon_foreground: "assets/icon.png"
   
   # Remove old launcher icon
   remove_alpha_ios: true
