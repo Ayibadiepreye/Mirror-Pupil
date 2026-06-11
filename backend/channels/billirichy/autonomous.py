@@ -327,11 +327,15 @@ class BillirichyAutonomousManager:
             if not market_price or market_price <= 0:
                 return False
             
-            # Calculate profit in pips
+            # Calculate profit in pips with correct multiplier per symbol
+            # Forex (4 decimals): 1 pip = 0.0001 → * 10000
+            # XAUUSD (2 decimals): 1 pip = 0.01 → * 100
+            pip_multiplier = 100 if trade.symbol == 'XAUUSD' else 10000
+            
             if trade.direction == 'BUY':
-                profit_pips = (market_price - trade.entry_price) * 10000
+                profit_pips = (market_price - trade.entry_price) * pip_multiplier
             else:  # SELL
-                profit_pips = (trade.entry_price - market_price) * 10000
+                profit_pips = (trade.entry_price - market_price) * pip_multiplier
             
             return profit_pips > 0
             
@@ -356,11 +360,15 @@ class BillirichyAutonomousManager:
             if not market_price or market_price <= 0:
                 return False
             
-            # Calculate profit in pips
+            # Calculate profit in pips with correct multiplier per symbol
+            # Forex (4 decimals): 1 pip = 0.0001 → * 10000
+            # XAUUSD (2 decimals): 1 pip = 0.01 → * 100
+            pip_multiplier = 100 if trade.symbol == 'XAUUSD' else 10000
+            
             if trade.direction == 'BUY':
-                profit_pips = (market_price - trade.entry_price) * 10000
+                profit_pips = (market_price - trade.entry_price) * pip_multiplier
             else:  # SELL
-                profit_pips = (trade.entry_price - market_price) * 10000
+                profit_pips = (trade.entry_price - market_price) * pip_multiplier
             
             # Get threshold for this symbol
             threshold = self.be_profit_threshold.get(
