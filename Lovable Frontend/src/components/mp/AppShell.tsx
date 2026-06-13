@@ -2,7 +2,7 @@ import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, TrendingUp, History, Settings, Bot, Bell,
-  Circle, Plus, X, LogOut,
+  Circle, Plus, X, LogOut, UserCog,
 } from "lucide-react";
 import { notificationsApi, QK, botApi } from "@/lib/mp/api";
 import { useMirrorPupilWebSocket } from "@/lib/mp/ws";
@@ -17,6 +17,7 @@ const NAV = [
   { to: "/trades", label: "Active", icon: TrendingUp },
   { to: "/history", label: "History", icon: History },
   { to: "/bot-control", label: "Bot", icon: Bot },
+  { to: "/users", label: "Users", icon: UserCog },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
