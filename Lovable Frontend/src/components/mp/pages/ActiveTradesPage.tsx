@@ -154,6 +154,11 @@ export function ActiveTradesPage() {
                         <Icon className="size-3.5" /> {t.direction}
                       </span>
                       <h3 className="font-mono font-semibold text-lg">{t.symbol}</h3>
+                      {t.status === "pending" && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-500">
+                          PENDING
+                        </span>
+                      )}
                       {t.tp1_hit && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[color:var(--mp-success)]/20 text-[color:var(--mp-success)]">
                           <CheckCircle2 className="size-3" /> TP1
@@ -188,12 +193,12 @@ export function ActiveTradesPage() {
                     <Button size="sm" variant="outline" className="gap-1.5 text-[color:var(--mp-danger)] hover:text-[color:var(--mp-danger)]" onClick={() => doClose(t)}>
                       <X className="size-3.5" /> Close
                     </Button>
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => doBe(t)}>
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => doBe(t)} disabled={t.status !== "filled"}>
                       <Scale className="size-3.5" /> Breakeven
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="outline" className="gap-1.5">
+                        <Button size="sm" variant="outline" className="gap-1.5" disabled={t.status !== "filled"}>
                           <Scissors className="size-3.5" /> Partial
                         </Button>
                       </DropdownMenuTrigger>
