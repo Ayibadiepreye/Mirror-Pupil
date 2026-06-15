@@ -1852,6 +1852,11 @@ class DatabaseManager:
             logger.error(f"Failed to update risk profile: {e}")
             return False
     
+    async def get_user_by_id(self, user_id: str) -> Optional[dict]:
+        """Get user by ID."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
                     "SELECT * FROM users WHERE user_id = $1",
                     user_id
                 )
