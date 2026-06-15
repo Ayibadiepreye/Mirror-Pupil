@@ -152,31 +152,6 @@ class MessageCache(BaseModel):
 
 
 class Notification(BaseModel):
-    """Real-time notification for GUI."""
-    notification_id: Optional[int] = None
-    account_key: Optional[str] = None
-    category: str  # SIGNAL, EXECUTION, MANAGEMENT, BREACH, SYSTEM
-    severity: str  # INFO, WARNING, ERROR, CRITICAL
-    title: str
-    message: str
-    metadata: Optional[dict] = None  # Additional data
-    read: bool = False
-    created_at: Optional[datetime] = None
-
-
-class ManualAction(BaseModel):
-    """Audit trail for manual user actions."""
-    action_id: Optional[int] = None
-    account_key: str
-    trade_id: Optional[int] = None
-    action_type: str  # MANUAL_CLOSE, MANUAL_BE, MANUAL_PARTIAL_25, etc.
-    action_data: Optional[dict] = None  # Additional details
-    performed_at: Optional[datetime] = None
-
-
-
-
-class Notification(BaseModel):
     """Real-time notification for GUI display."""
     notification_id: Optional[int] = None
     account_key: Optional[str] = None

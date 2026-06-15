@@ -16,6 +16,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/mp/AppShell";
 import { ConfirmProvider } from "@/components/mp/ConfirmDialog";
+import { AuthProvider } from "@/lib/mp/auth-context";
 import { getSession } from "@/lib/mp/auth";
 
 function NotFoundComponent() {
@@ -151,24 +152,26 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConfirmProvider>
-        {isAuthRoute ? (
-          <Outlet />
-        ) : (
-          <AppShell>
+      <AuthProvider>
+        <ConfirmProvider>
+          {isAuthRoute ? (
             <Outlet />
-          </AppShell>
-        )}
-        <Toaster
-          theme="dark"
-          position="top-right"
-          toastOptions={{
-            classNames: {
-              toast: "bg-[color:var(--mp-base)] border-[color:var(--mp-border)] text-[color:var(--mp-text)]",
-            },
-          }}
-        />
-      </ConfirmProvider>
+          ) : (
+            <AppShell>
+              <Outlet />
+            </AppShell>
+          )}
+          <Toaster
+            theme="dark"
+            position="top-right"
+            toastOptions={{
+              classNames: {
+                toast: "bg-[color:var(--mp-base)] border-[color:var(--mp-border)] text-[color:var(--mp-text)]",
+              },
+            }}
+          />
+        </ConfirmProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -10,6 +10,7 @@ from loguru import logger
 from ...database import DatabaseManager
 from ...core.trade_executor import TradeExecutor
 from ...core.firebase_auth import require_super_admin
+from ...core.bot_state import get_bot_state
 from ..main import get_db, get_executor
 
 
@@ -56,6 +57,9 @@ async def get_bot_status(
         Bot status information
     """
     try:
+        # Get bot state
+        bot_state = get_bot_state()
+        
         # Get all accounts
         accounts = await db.get_all_accounts()
         
@@ -76,7 +80,7 @@ async def get_bot_status(
         eod_trading = settings.get('allow_eod_trading', 'false') == 'true'
         
         return BotStatusResponse(
-            status="running",
+            status=bot_state.get_status(),
             dry_run=False,  # TODO: Get from config
             active_accounts=active_accounts,
             paused_accounts=paused_accounts,
@@ -110,12 +114,22 @@ async def control_bot(
         Success message
     """
     try:
+        bot_state = get_bot_state()
+        
         if request.action == "start":
-            logger.info("Bot start requested (already running)")
-            return {"status": "success", "message": "Bot is running"}
+            changed = await bot_state.start()
+            return {
+                "status": "success",
+                "message": "Bot started" if changed else "Bot already running",
+                "bot_status": bot_state.get_status()
+            }
         elif request.action == "stop":
-            logger.info("Bot stop requested (not implemented - bot runs continuously)")
-            return {"status": "success", "message": "Bot stop not implemented (runs continuously)"}
+            changed = await bot_state.stop()
+            return {
+                "status": "success",
+                "message": "Bot stopped (existing trades will continue)" if changed else "Bot already stopped",
+                "bot_status": bot_state.get_status()
+            }
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -160,12 +174,31 @@ async def force_close_all_positions(
                         # Close position
                         await client['client'].close_position(int(trade.tl_position_id))
                         
+                        # Get current market price
+                        try:
+                            positions = await client['client'].get_all_positions()
+                            current_price = None
+                            for pos in positions:
+                                if str(pos.get('id')) == str(trade.tl_position_id):
+                                    current_price = float(pos.get('currentPrice', trade.entry_price))
+                                    break
+                            if not current_price:
+                                current_price = trade.entry_price
+                        except:
+                            current_price = trade.entry_price
+                        
+                        # Calculate PnL
+                        pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                        pnl = pips * trade.lot_size * 100000  # Approximate
+                        outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
+                        
                         # Mark as closed in database
-                        await db.close_trade(
+                        await db.close_active_trade(
                             trade.trade_id,
-                            exit_price=trade.entry_price,  # Use current price
-                            exit_time=None,  # Will use current time
-                            pnl=0.0  # Will be calculated
+                            exit_price=current_price,
+                            pnl=pnl,
+                            outcome=outcome,
+                            close_reason='FORCE_CLOSE'
                         )
                         
                         total_closed += 1
@@ -217,12 +250,31 @@ async def force_close_account_positions(
                     # Close position
                     await client['client'].close_position(int(trade.tl_position_id))
                     
+                    # Get current market price
+                    try:
+                        positions = await client['client'].get_all_positions()
+                        current_price = None
+                        for pos in positions:
+                            if str(pos.get('id')) == str(trade.tl_position_id):
+                                current_price = float(pos.get('currentPrice', trade.entry_price))
+                                break
+                        if not current_price:
+                            current_price = trade.entry_price
+                    except:
+                        current_price = trade.entry_price
+                    
+                    # Calculate PnL
+                    pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                    pnl = pips * trade.lot_size * 100000  # Approximate
+                    outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
+                    
                     # Mark as closed in database
-                    await db.close_trade(
+                    await db.close_active_trade(
                         trade.trade_id,
-                        exit_price=trade.entry_price,
-                        exit_time=None,
-                        pnl=0.0
+                        exit_price=current_price,
+                        pnl=pnl,
+                        outcome=outcome,
+                        close_reason='FORCE_CLOSE'
                     )
                     
                     total_closed += 1

@@ -231,7 +231,8 @@ app.add_middleware(
     allow_origins=[
         "https://web.telegram.org",
         "https://k.web.telegram.org",
-        "*"  # Allow all origins for development (remove in production)
+        "http://localhost:5173",  # Vite dev
+        "http://localhost:3000",  # alt dev
     ],
     allow_credentials=True,
     allow_methods=["*"],

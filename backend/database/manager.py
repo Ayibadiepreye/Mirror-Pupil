@@ -16,6 +16,7 @@ from .models import (
     Channel, RiskProfile, Account, ChannelSubscription,
     ActiveTrade, WaitingRoom, TradeHistory, ProfitableDay
 )
+from ..core.secret_vault import get_vault
 
 
 class DatabaseManager:
@@ -402,12 +403,23 @@ class DatabaseManager:
     
     async def get_all_accounts(self) -> List[Account]:
         """Get all accounts."""
+        vault = get_vault()
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM accounts")
-            return [Account(**dict(row)) for row in rows]
+            accounts = []
+            for row in rows:
+                account_dict = dict(row)
+                # Decrypt password
+                try:
+                    account_dict['tl_password'] = vault.decrypt(account_dict['tl_password'])
+                except Exception as e:
+                    logger.warning(f"Failed to decrypt password for {account_dict['account_key']}: {e}")
+                accounts.append(Account(**account_dict))
+            return accounts
     
     async def get_accounts_by_user(self, user_id: str, is_super_admin: bool = False) -> List[Account]:
         """Get accounts filtered by user_id. Super admin sees all."""
+        vault = get_vault()
         async with self.pool.acquire() as conn:
             if is_super_admin:
                 rows = await conn.fetch("SELECT * FROM accounts")
@@ -415,15 +427,33 @@ class DatabaseManager:
                 rows = await conn.fetch(
                     "SELECT * FROM accounts WHERE user_id = $1", user_id
                 )
-            return [Account(**dict(row)) for row in rows]
+            accounts = []
+            for row in rows:
+                account_dict = dict(row)
+                # Decrypt password
+                try:
+                    account_dict['tl_password'] = vault.decrypt(account_dict['tl_password'])
+                except Exception as e:
+                    logger.warning(f"Failed to decrypt password for {account_dict['account_key']}: {e}")
+                accounts.append(Account(**account_dict))
+            return accounts
     
     async def get_account(self, account_key: str) -> Optional[Account]:
         """Get account by key."""
+        vault = get_vault()
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM accounts WHERE account_key = $1", account_key
             )
-            return Account(**dict(row)) if row else None
+            if not row:
+                return None
+            account_dict = dict(row)
+            # Decrypt password
+            try:
+                account_dict['tl_password'] = vault.decrypt(account_dict['tl_password'])
+            except Exception as e:
+                logger.warning(f"Failed to decrypt password for {account_key}: {e}")
+            return Account(**account_dict)
     
     async def verify_account_ownership(
         self, account_key: str, user_id: str, is_super_admin: bool = False
@@ -440,6 +470,10 @@ class DatabaseManager:
     async def add_account(self, account: Account, user_id: Optional[str] = None) -> bool:
         """Add a new account."""
         try:
+            # Encrypt password before storing
+            vault = get_vault()
+            encrypted_password = vault.encrypt(account.tl_password)
+            
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -452,7 +486,7 @@ class DatabaseManager:
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                     """,
                     account.account_key, account.credential_key, account.tl_account_id,
-                    account.tl_email, account.tl_password, account.tl_server,
+                    account.tl_email, encrypted_password, account.tl_server,
                     account.tl_prop_firm, account.display_name, account.initial_balance, account.current_balance,
                     account.initial_balance,  # highest_banked_balance starts at initial
                     account.current_balance,  # daily_start_balance
@@ -460,6 +494,19 @@ class DatabaseManager:
                     account.cycle_start_date or datetime.now().date(),
                     user_id
                 )
+                
+                # Auto-subscribe to all enabled channels
+                await conn.execute(
+                    """
+                    INSERT INTO channel_subscriptions (account_key, channel_id, enabled)
+                    SELECT $1, channel_id, TRUE
+                    FROM channels
+                    WHERE enabled = TRUE
+                    ON CONFLICT (account_key, channel_id) DO NOTHING
+                    """,
+                    account.account_key
+                )
+                
                 logger.info(f"✓ Added account: {account.account_key} (user: {user_id})")
                 return True
         except Exception as e:

@@ -10,6 +10,7 @@ import os
 
 from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
+from .bot_state import get_bot_state
 from ..database import DatabaseManager, ActiveTrade
 from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
 
@@ -58,6 +59,7 @@ class TradeExecutor:
         Execute a parsed signal on one or more accounts.
         
         Enforces:
+        - Bot running state (no new trades if stopped)
         - Trading hours validation (weekends, EOD, pre-market)
         - Channel subscription filtering
         - Concurrent trade limits per account
@@ -71,7 +73,19 @@ class TradeExecutor:
         Returns:
             Dict mapping account_key → execution result
         """
-        # CRITICAL: Check trading hours FIRST (before any execution)
+        # CRITICAL: Check bot state FIRST
+        bot_state = get_bot_state()
+        if not bot_state.is_running():
+            logger.warning(
+                f"Signal rejected: Bot is stopped. "
+                f"Signal: {signal.symbol} {signal.direction}"
+            )
+            return {
+                "status": "rejected",
+                "reason": "Bot is stopped - no new trades allowed"
+            }
+        
+        # CRITICAL: Check trading hours SECOND (before any execution)
         trading_hours = get_trading_hours_validator(db=self.db)
         allowed, reason = await trading_hours.is_trading_allowed()
         
