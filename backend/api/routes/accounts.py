@@ -411,7 +411,40 @@ async def create_account(
         await db.sync_channel_subscriptions()
         
         logger.info(f"✓ Created account: {account_key}")
-        return AccountResponse.from_account(account)
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        risk_calculator = get_risk_calculator()
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(account.risk_profile_id) if account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields for response
+        daily_drawdown_pct = 0.0
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        overall_drawdown_pct = 0.0
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        # Calculate consistency score (will be None for new accounts)
+        score_data = await consistency_calculator.calculate_consistency_score(account)
+        consistency_score = score_data.get('score')
+        
+        # Get profitable days summary
+        summary = await consistency_calculator.get_profitable_days_summary(account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
         
     except HTTPException:
         raise
@@ -622,7 +655,42 @@ async def update_account(
         # Get updated account
         updated_account = await db.get_account(account_key)
         logger.info(f"✓ Updated account: {account_key}")
-        return AccountResponse.from_account(updated_account)
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(updated_account.risk_profile_id) if updated_account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields
+        daily_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            daily_drawdown_pct = ((updated_account.daily_start_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        
+        overall_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            overall_drawdown_pct = ((updated_account.highest_banked_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        score_data = await consistency_calculator.calculate_consistency_score(updated_account)
+        consistency_score = score_data.get('score')
+        
+        summary = await consistency_calculator.get_profitable_days_summary(updated_account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            updated_account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
         
     except HTTPException:
         raise
@@ -722,7 +790,42 @@ async def pause_account(
         
         account = await db.get_account(account_key)
         logger.info(f"✓ Paused account: {account_key}")
-        return AccountResponse.from_account(account)
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(account.risk_profile_id) if account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields
+        daily_drawdown_pct = 0.0
+        if account.initial_balance and account.initial_balance > 0:
+            daily_drawdown_pct = ((account.daily_start_balance - account.current_balance) / account.initial_balance) * 100
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        
+        overall_drawdown_pct = 0.0
+        if account.initial_balance and account.initial_balance > 0:
+            overall_drawdown_pct = ((account.highest_banked_balance - account.current_balance) / account.initial_balance) * 100
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        score_data = await consistency_calculator.calculate_consistency_score(account)
+        consistency_score = score_data.get('score')
+        
+        summary = await consistency_calculator.get_profitable_days_summary(account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
         
     except HTTPException:
         raise
@@ -770,7 +873,42 @@ async def resume_account(
         
         account = await db.get_account(account_key)
         logger.info(f"✓ Resumed account: {account_key}")
-        return AccountResponse.from_account(account)
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(account.risk_profile_id) if account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields
+        daily_drawdown_pct = 0.0
+        if account.initial_balance and account.initial_balance > 0:
+            daily_drawdown_pct = ((account.daily_start_balance - account.current_balance) / account.initial_balance) * 100
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        
+        overall_drawdown_pct = 0.0
+        if account.initial_balance and account.initial_balance > 0:
+            overall_drawdown_pct = ((account.highest_banked_balance - account.current_balance) / account.initial_balance) * 100
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        score_data = await consistency_calculator.calculate_consistency_score(account)
+        consistency_score = score_data.get('score')
+        
+        summary = await consistency_calculator.get_profitable_days_summary(account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
         
     except HTTPException:
         raise
