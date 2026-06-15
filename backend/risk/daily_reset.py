@@ -5,11 +5,14 @@ Handles 5pm EST daily reset logic.
 
 import asyncio
 from datetime import datetime, time, date
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import pytz
 from loguru import logger
 
-from ..database import DatabaseManager, Account, ProfitableDay
+from ..database.models import Account, ProfitableDay
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class DailyResetHandler:
@@ -23,7 +26,7 @@ class DailyResetHandler:
     - Reset daily_pnl to 0
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.reset_task: Optional[asyncio.Task] = None
         self.timezone = pytz.timezone("America/New_York")  # EST/EDT
@@ -253,7 +256,7 @@ class DailyResetHandler:
 _handler: Optional[DailyResetHandler] = None
 
 
-async def get_daily_reset_handler(db: DatabaseManager) -> DailyResetHandler:
+async def get_daily_reset_handler(db: "DatabaseManager") -> DailyResetHandler:
     """Get the global daily reset handler instance."""
     global _handler
     if _handler is None:

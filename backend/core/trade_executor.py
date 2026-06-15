@@ -4,15 +4,18 @@ Executes ParsedSignals on TradeLocker accounts.
 """
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from loguru import logger
 import os
 
 from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
 from .bot_state import get_bot_state
-from ..database import DatabaseManager, ActiveTrade
+from ..database.models import ActiveTrade, Account, RiskProfile
 from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class TradeExecutor:
@@ -27,7 +30,7 @@ class TradeExecutor:
     - Lot size rounding
     """
     
-    def __init__(self, db: DatabaseManager, dry_run: bool = False):
+    def __init__(self, db: "DatabaseManager", dry_run: bool = False):
         self.db = db
         self.dry_run = dry_run or os.getenv("DRY_RUN", "false").lower() == "true"
         self.account_manager = get_account_manager()
@@ -1349,7 +1352,7 @@ class TradeExecutor:
 _executor: Optional[TradeExecutor] = None
 
 
-async def get_trade_executor(db: DatabaseManager) -> TradeExecutor:
+async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
     """Get the global trade executor instance."""
     global _executor
     if _executor is None:

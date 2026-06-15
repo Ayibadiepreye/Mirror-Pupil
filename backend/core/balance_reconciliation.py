@@ -5,12 +5,15 @@ Implements Section 2.9 of the spec.
 """
 
 import asyncio
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime
 from loguru import logger
 
-from ..database import DatabaseManager, Account
+from ..database.models import Account
 from .account_manager import get_account_manager
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 # Threshold for detecting meaningful balance changes (ignore smaller fluctuations)
@@ -36,7 +39,7 @@ class BalanceReconciliationMonitor:
     - Formal payout reset: everything resets (separate GUI action)
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.account_manager = get_account_manager()
         self.monitor_task: Optional[asyncio.Task] = None
@@ -407,7 +410,7 @@ class BalanceReconciliationMonitor:
 _monitor: Optional[BalanceReconciliationMonitor] = None
 
 
-def get_balance_monitor(db: Optional[DatabaseManager] = None) -> BalanceReconciliationMonitor:
+def get_balance_monitor(db: Optional["DatabaseManager"] = None) -> BalanceReconciliationMonitor:
     """Get or create singleton balance reconciliation monitor."""
     global _monitor
     if _monitor is None:

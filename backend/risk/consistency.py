@@ -3,11 +3,14 @@ Mirror Pupil v5.1 - Consistency Score Calculator
 Calculates the 20% rule consistency score for prop firm compliance.
 """
 
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 from datetime import datetime, timedelta, date
 from loguru import logger
 
-from ..database import DatabaseManager, Account
+from ..database.models import Account
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class ConsistencyScoreCalculator:
@@ -23,7 +26,7 @@ class ConsistencyScoreCalculator:
         >= 20%: Breach risk (red)
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         logger.info("Initialized ConsistencyScoreCalculator")
     
@@ -178,7 +181,7 @@ class ConsistencyScoreCalculator:
 _calculator: Optional[ConsistencyScoreCalculator] = None
 
 
-async def get_consistency_calculator(db: DatabaseManager) -> ConsistencyScoreCalculator:
+async def get_consistency_calculator(db: "DatabaseManager") -> ConsistencyScoreCalculator:
     """Get the global consistency score calculator instance."""
     global _calculator
     if _calculator is None:

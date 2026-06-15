@@ -5,12 +5,15 @@ Detects when TradeLocker closes positions (TP/SL hits) and updates database.
 """
 
 import asyncio
-from typing import Optional, Dict, List, Set
+from typing import Optional, Dict, List, Set, TYPE_CHECKING
 from loguru import logger
 from datetime import datetime
 
-from ..database import DatabaseManager, ActiveTrade
+from ..database.models import ActiveTrade
 from .account_manager import get_account_manager
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class PositionReconciliationMonitor:
@@ -25,7 +28,7 @@ class PositionReconciliationMonitor:
     - Updates balance and reconciles account state
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.account_manager = get_account_manager()
         self.notification_service = None  # Lazy-loaded to avoid circular import
@@ -256,7 +259,7 @@ class PositionReconciliationMonitor:
 _monitor: Optional[PositionReconciliationMonitor] = None
 
 
-async def get_position_reconciliation_monitor(db: DatabaseManager) -> PositionReconciliationMonitor:
+async def get_position_reconciliation_monitor(db: "DatabaseManager") -> PositionReconciliationMonitor:
     """Get the global position reconciliation monitor instance."""
     global _monitor
     if _monitor is None:

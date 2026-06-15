@@ -5,11 +5,12 @@ Handles 4:45pm EST force close of all trades.
 
 import asyncio
 from datetime import datetime, time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import pytz
 from loguru import logger
 
-from ..database import DatabaseManager
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class EODCloseHandler:
@@ -20,7 +21,7 @@ class EODCloseHandler:
     to ensure accounts are flat at the benchmark snapshot.
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.close_task: Optional[asyncio.Task] = None
         self.timezone = pytz.timezone("America/New_York")  # EST/EDT
@@ -291,7 +292,7 @@ class EODCloseHandler:
 _handler: Optional[EODCloseHandler] = None
 
 
-async def get_eod_close_handler(db: DatabaseManager) -> EODCloseHandler:
+async def get_eod_close_handler(db: "DatabaseManager") -> EODCloseHandler:
     """Get the global EOD close handler instance."""
     global _handler
     if _handler is None:

@@ -4,12 +4,15 @@ Monitors pending LIMIT and STOP orders until they fill or expire.
 """
 
 import asyncio
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, TYPE_CHECKING
 from datetime import datetime, timedelta
 from loguru import logger
 
-from ..database import DatabaseManager, ActiveTrade
+from ..database.models import ActiveTrade
 from .account_manager import get_account_manager
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class PendingOrderMonitor:
@@ -23,7 +26,7 @@ class PendingOrderMonitor:
     - Handles partial fills
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.account_manager = get_account_manager()
         self.monitor_task: Optional[asyncio.Task] = None
@@ -394,7 +397,7 @@ class PendingOrderMonitor:
 _monitor: Optional[PendingOrderMonitor] = None
 
 
-async def get_pending_order_monitor(db: DatabaseManager) -> PendingOrderMonitor:
+async def get_pending_order_monitor(db: "DatabaseManager") -> PendingOrderMonitor:
     """Get the global pending order monitor instance."""
     global _monitor
     if _monitor is None:

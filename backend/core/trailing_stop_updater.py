@@ -5,12 +5,15 @@ Implements Section 4.6 of the spec.
 """
 
 import asyncio
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 from datetime import datetime
 from loguru import logger
 
-from ..database import DatabaseManager, ActiveTrade
+from ..database.models import ActiveTrade
 from .account_manager import get_account_manager
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 # Trail distances per symbol (Section 4.6)
@@ -69,7 +72,7 @@ class TrailingStopUpdater:
     - SELL: new_sl = market_price + trail_distance (only if < current_sl)
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.account_manager = get_account_manager()
         self.updater_task: Optional[asyncio.Task] = None
@@ -235,7 +238,7 @@ class TrailingStopUpdater:
 _updater: Optional[TrailingStopUpdater] = None
 
 
-def get_trailing_stop_updater(db: Optional[DatabaseManager] = None) -> TrailingStopUpdater:
+def get_trailing_stop_updater(db: Optional["DatabaseManager"] = None) -> TrailingStopUpdater:
     """Get or create singleton trailing stop updater."""
     global _updater
     if _updater is None:

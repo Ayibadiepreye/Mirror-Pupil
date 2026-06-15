@@ -6,7 +6,7 @@ Price delta calculation and floor/limit calculations with proper currency conver
 from typing import Optional, Dict
 from loguru import logger
 
-from ..database import Account, RiskProfile
+from ..database.models import Account, RiskProfile
 
 
 def parse_symbol(symbol: str) -> tuple:

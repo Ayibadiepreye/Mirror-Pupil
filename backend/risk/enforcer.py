@@ -4,11 +4,14 @@ Pre-trade risk validation and breach detection.
 """
 
 import asyncio
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, TYPE_CHECKING
 from loguru import logger
 
-from ..database import DatabaseManager, Account, RiskProfile, ActiveTrade
+from ..database.models import Account, RiskProfile, ActiveTrade
 from .calculator import RiskCalculator, calculate_price_delta, get_risk_calculator
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class RiskEnforcer:
@@ -22,7 +25,7 @@ class RiskEnforcer:
     - Channel priority handling
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
         self.calculator = get_risk_calculator()
         self.notification_service = None  # Lazy-loaded to avoid circular import
@@ -564,7 +567,7 @@ class RiskEnforcer:
 _enforcer: Optional[RiskEnforcer] = None
 
 
-async def get_risk_enforcer(db: DatabaseManager) -> RiskEnforcer:
+async def get_risk_enforcer(db: "DatabaseManager") -> RiskEnforcer:
     """Get the global risk enforcer instance."""
     global _enforcer
     if _enforcer is None:

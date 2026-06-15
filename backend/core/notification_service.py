@@ -3,11 +3,13 @@ Mirror Pupil v5.1 - Notification Service
 Centralized notification creation and broadcasting.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from loguru import logger
 
-from ..database import DatabaseManager
 from ..api.websocket import broadcast_update
+
+if TYPE_CHECKING:
+    from ..database import DatabaseManager
 
 
 class NotificationService:
@@ -16,7 +18,7 @@ class NotificationService:
     Handles both database persistence and real-time WebSocket updates.
     """
     
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: "DatabaseManager"):
         self.db = db
     
     async def create_notification(
@@ -190,7 +192,7 @@ class NotificationService:
 _notification_service: Optional[NotificationService] = None
 
 
-def get_notification_service(db: DatabaseManager = None) -> NotificationService:
+def get_notification_service(db: "DatabaseManager" = None) -> NotificationService:
     """Get or create the global notification service instance."""
     global _notification_service
     
