@@ -78,8 +78,14 @@ class RiskEnforcer:
                         logger.error(f"No risk profile found for {account.account_key}")
                         continue
                     
-                    # Check for breach
-                    await self.check_risk_limits(account, profile)
+                    # Get TradeLocker client for this account
+                    from ..core.account_manager import get_account_manager
+                    account_manager = get_account_manager()
+                    client_data = account_manager.get_account(account.account_key)
+                    tl_client = client_data['client'] if client_data else None
+                    
+                    # Check for breach (pass client for equity fetch)
+                    await self.check_risk_limits(account, profile, tl_client)
                 
             except asyncio.CancelledError:
                 break
@@ -105,11 +111,13 @@ class RiskEnforcer:
                 logger.debug(f"[{account_key}] Fetched equity: ${equity:.2f}")
                 return equity
         except Exception as e:
-            logger.warning(f"[{account_key}] Failed to fetch equity from TradeLocker: {e}")
+            logger.warning(f"[{account_key}] Failed to fetch equity from TradeLocker: {e} - FALLING BACK TO BALANCE")
         
-        # Fallback to balance
+        # Fallback to balance (DEGRADED MODE)
         account = await self.db.get_account(account_key)
-        return account.current_balance or 0.0
+        balance = account.current_balance or 0.0
+        logger.warning(f"[{account_key}] Using balance fallback (degraded mode): ${balance:.2f}")
+        return balance
     
     async def validate_trade(
         self,
@@ -183,7 +191,7 @@ class RiskEnforcer:
         existing_risk = sum(trade.risk_usd or 0.0 for trade in active_trades)
         
         # Calculate current equity (balance + floating P&L from TradeLocker)
-        current_equity = await self._get_account_equity(account.account_key, tl_client) if tl_client else (account.current_balance or 0.0)
+        current_equity = await self._get_account_equity(account.account_key, client) if client else (account.current_balance or 0.0)
         
         # Check 1: Concurrent trade limit
         max_concurrent = account.max_concurrent_trades_override or profile.max_concurrent_trades

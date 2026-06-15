@@ -167,37 +167,56 @@ async def force_close_all_positions(
             trades = await db.get_active_trades(account.account_key)
             for trade in trades:
                 try:
-                    # Close the position via TradeLocker
+                    # Get account and client
                     acc_data = await db.get_account(account.account_key)
                     client = executor.account_manager.get_account(account.account_key)
                     
                     if client and trade.tl_position_id:
-                        # Close position
-                        await client['client'].close_position(int(trade.tl_position_id))
-                        
-                    if client and trade.tl_position_id:
-                        # Close position
-                        await client['client'].close_position(int(trade.tl_position_id))
-                        
-                        # Get current market price
+                        # Get current market price BEFORE closing
+                        current_price = None
                         try:
                             positions = await client['client'].get_all_positions()
-                            current_price = None
                             for pos in positions:
                                 if str(pos.get('id')) == str(trade.tl_position_id):
-                                    current_price = float(pos.get('currentPrice', trade.entry_price))
+                                    current_price = float(pos.get('currentPrice', 0.0))
                                     break
-                            if not current_price:
-                                current_price = trade.entry_price
-                        except:
-                            current_price = trade.entry_price
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch price before close: {e}")
+                        
+                        # Close position (ONCE)
+                        close_response = await client['client'].close_position(int(trade.tl_position_id))
+                        
+                        # Determine exit price source
+                        exit_price = None
+                        price_source = None
+                        
+                        # Priority 1: Broker close response
+                        if isinstance(close_response, dict) and 'price' in close_response:
+                            exit_price = float(close_response.get('price', 0.0))
+                            price_source = "broker_close_response"
+                        
+                        # Priority 2: Live price captured before close
+                        if not exit_price and current_price and current_price > 0:
+                            exit_price = current_price
+                            price_source = "live_before_close"
+                        
+                        # Priority 3: Approximate (flag for reconciliation)
+                        if not exit_price:
+                            exit_price = trade.entry_price
+                            price_source = "approximation_needs_reconciliation"
+                            logger.warning(
+                                f"[{account.account_key}] Force-close {trade.symbol}: "
+                                f"No reliable exit price, using entry price approximation"
+                            )
+                        
+                        logger.info(f"[{account.account_key}] Exit price source: {price_source}, price: {exit_price}")
                         
                         # Calculate PnL using proper risk calculator
                         try:
                             pnl = await calculate_usd_pnl(
                                 symbol=trade.symbol,
                                 entry_price=trade.entry_price,
-                                exit_price=current_price,
+                                exit_price=exit_price,
                                 lot_size=trade.lot_size,
                                 direction=trade.direction,
                                 client=client['client'],
@@ -206,7 +225,7 @@ async def force_close_all_positions(
                         except Exception as e:
                             logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
                             # Fallback to simple calculation
-                            pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                            pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
                             pnl = pips * trade.lot_size * 100000
                         
                         outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
@@ -266,28 +285,51 @@ async def force_close_account_positions(
         for trade in trades:
             try:
                 if client and trade.tl_position_id:
-                    # Close position
-                    await client['client'].close_position(int(trade.tl_position_id))
-                    
-                    # Get current market price
+                    # Get current market price BEFORE closing
+                    current_price = None
                     try:
                         positions = await client['client'].get_all_positions()
-                        current_price = None
                         for pos in positions:
                             if str(pos.get('id')) == str(trade.tl_position_id):
-                                current_price = float(pos.get('currentPrice', trade.entry_price))
+                                current_price = float(pos.get('currentPrice', 0.0))
                                 break
-                        if not current_price:
-                            current_price = trade.entry_price
-                    except:
-                        current_price = trade.entry_price
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch price before close: {e}")
+                    
+                    # Close position (ONCE)
+                    close_response = await client['client'].close_position(int(trade.tl_position_id))
+                    
+                    # Determine exit price source
+                    exit_price = None
+                    price_source = None
+                    
+                    # Priority 1: Broker close response
+                    if isinstance(close_response, dict) and 'price' in close_response:
+                        exit_price = float(close_response.get('price', 0.0))
+                        price_source = "broker_close_response"
+                    
+                    # Priority 2: Live price captured before close
+                    if not exit_price and current_price and current_price > 0:
+                        exit_price = current_price
+                        price_source = "live_before_close"
+                    
+                    # Priority 3: Approximate (flag for reconciliation)
+                    if not exit_price:
+                        exit_price = trade.entry_price
+                        price_source = "approximation_needs_reconciliation"
+                        logger.warning(
+                            f"[{account_key}] Force-close {trade.symbol}: "
+                            f"No reliable exit price, using entry price approximation"
+                        )
+                    
+                    logger.info(f"[{account_key}] Exit price source: {price_source}, price: {exit_price}")
                     
                     # Calculate PnL using proper risk calculator
                     try:
                         pnl = await calculate_usd_pnl(
                             symbol=trade.symbol,
                             entry_price=trade.entry_price,
-                            exit_price=current_price,
+                            exit_price=exit_price,
                             lot_size=trade.lot_size,
                             direction=trade.direction,
                             client=client['client'],
@@ -296,7 +338,7 @@ async def force_close_account_positions(
                     except Exception as e:
                         logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
                         # Fallback to simple calculation
-                        pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                        pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
                         pnl = pips * trade.lot_size * 100000
                     
                     outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')

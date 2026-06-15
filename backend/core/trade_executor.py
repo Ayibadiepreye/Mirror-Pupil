@@ -259,14 +259,15 @@ class TradeExecutor:
             risk_per_lot = await calculate_usd_risk(
                 symbol=symbol,
                 entry_price=entry_price,
-                sl_price=sl_price,
+                stop_loss=sl_price,  # Correct parameter name
                 lot_size=1.0,  # Calculate for 1 lot
                 client=client,
                 instrument=instrument
             )
             
             if risk_per_lot <= 0:
-                logger.warning(f"Invalid risk calculation for {symbol}, using default lot size")
+                logger.warning(f"[{account.account_key}] Invalid risk calculation for {symbol}, using default lot size")
+                logger.warning(f"[{account.account_key}] Invalid risk calculation for {symbol}, using default lot size")
                 return self.default_lot_size
             
             # Calculate desired risk amount
@@ -276,14 +277,28 @@ class TradeExecutor:
             # Calculate lot size
             calculated_lot_size = max_risk_amount / risk_per_lot
             
+            # Reject zero or invalid calculated size
+            if calculated_lot_size <= 0:
+                logger.error(
+                    f"[{account.account_key}] INVALID CALCULATED LOT SIZE: {calculated_lot_size} "
+                    f"(balance=${balance:.2f}, max_risk_pct={profile.max_risk_per_trade_pct}%, "
+                    f"risk_per_lot=${risk_per_lot:.2f}) - USING DEFAULT"
+                )
+                return self.default_lot_size
+            
             # Round to lot step
             lot_step = instrument.get('lot_step', 0.01)
             rounded_lot_size = client.round_lot_size(calculated_lot_size, lot_step)
             
+            # Comprehensive debug log
             logger.info(
-                f"[{account.account_key}] Calculated lot size: {rounded_lot_size} "
-                f"(balance=${balance:.2f}, max_risk={profile.max_risk_per_trade_pct}%, "
-                f"risk_per_lot=${risk_per_lot:.2f})"
+                f"[{account.account_key}] LOT SIZE CALCULATION: "
+                f"profile_risk={profile.max_risk_per_trade_pct}%, "
+                f"balance=${balance:.2f}, "
+                f"risk_per_lot=${risk_per_lot:.2f}, "
+                f"computed_lot={calculated_lot_size:.4f}, "
+                f"rounded_lot={rounded_lot_size}, "
+                f"final_qty={rounded_lot_size}"
             )
             
             return rounded_lot_size
@@ -453,7 +468,7 @@ class TradeExecutor:
             take_profit = signal.tp[0] if signal.tp and len(signal.tp) > 0 else None
             stop_loss = signal.sl
             
-            # Step 8: Create order
+            # Step 8-10: ROLLBACK-SAFE ORDER PLACEMENT + DB PERSISTENCE
             logger.info(
                 f"[{account_key}] Placing {type_.upper()} order: "
                 f"{side.upper()} {lot_size} lots of {signal.symbol}"
@@ -465,121 +480,199 @@ class TradeExecutor:
             else:
                 validity = "GTC"  # Limit/Stop orders can use GTC (Good Till Cancel)
             
-            order = await client.create_order(
-                instrument_id=instrument_id,
-                quantity=lot_size,
-                side=side,
-                type_=type_,
-                price=price,
-                stop_price=stop_price,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                validity=validity
-            )
+            order_id = None
+            position_id = None
+            status = None
+            rollback_attempted = False
             
-            # Step 9: Extract order details
-            # SDK may return int (order_id) or dict (full response)
-            if isinstance(order, int):
-                # SDK returned just the order_id
-                order_id = order
-                position_id = None  # Will need to fetch from positions if needed
-                fill_price = signal.entry_price or 0.0
-                order_status = 'filled' if type_ == 'market' else 'new'  # TradeLocker uses 'new' for pending orders
-            else:
-                # SDK returned dict with full details
-                order_id = order.get('id') or order.get('orderId')
-                position_id = order.get('positionId')
-                fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
-                order_status = order.get('status', '').lower()
-            
-            # Determine if order is filled or pending
-            if type_ == "market":
-                # Market orders fill immediately
-                status = "filled"
-                fill_price = fill_price or signal.entry_price or 0.0
-            elif order_status in ['filled', 'executed']:
-                # Order already filled
-                status = "filled"
-                fill_price = fill_price or signal.entry_price or 0.0
-            elif order_status in ['pending', 'working', 'accepted']:
-                # Order is pending (LIMIT or STOP)
-                status = "pending"
-                fill_price = signal.entry_price or 0.0  # Use limit/stop price
-            elif order_status == 'partially_filled':
-                # Order partially filled
-                status = "partially_filled"
-                fill_price = fill_price or signal.entry_price or 0.0
-            else:
-                # Unknown status, assume pending
-                status = "pending"
-                fill_price = signal.entry_price or 0.0
-            
-            # CRITICAL: For filled market orders with no fill_price, fetch from position
-            if status == "filled" and fill_price == 0.0 and position_id:
-                try:
-                    logger.debug(
-                        f"[{account_key}] Market order filled but no price - "
-                        f"fetching from position {position_id}"
-                    )
-                    all_positions = await client.get_all_positions()
-                    position_info = next(
-                        (p for p in all_positions if p.get('id') == position_id),
-                        None
-                    )
-                    if position_info:
-                        # Get open price from position
-                        fill_price = float(position_info.get('openPrice', 0.0))
-                        if fill_price > 0:
-                            logger.info(
-                                f"[{account_key}] ✓ Fetched fill price from position: {fill_price}"
-                            )
-                        else:
-                            # Fallback to market price
-                            market_price = await client.get_market_price(signal.symbol)
-                            fill_price = market_price if market_price else 0.0
-                            logger.warning(
-                                f"[{account_key}] Using market price as fill price: {fill_price}"
-                            )
-                except Exception as e:
-                    logger.error(
-                        f"[{account_key}] Failed to fetch fill price from position: {e}"
-                    )
-                    # Last resort: use current market price
+            try:
+                # STEP 8: Place order on broker
+                order = await client.create_order(
+                    instrument_id=instrument_id,
+                    quantity=lot_size,
+                    side=side,
+                    type_=type_,
+                    price=price,
+                    stop_price=stop_price,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                    validity=validity
+                )
+                
+                # STEP 9: Extract order details
+                if isinstance(order, int):
+                    order_id = order
+                    position_id = None
+                    fill_price = signal.entry_price or 0.0
+                    order_status = 'filled' if type_ == 'market' else 'new'
+                else:
+                    order_id = order.get('id') or order.get('orderId')
+                    position_id = order.get('positionId')
+                    fill_price = order.get('avgPrice') or order.get('fillPrice') or order.get('price')
+                    order_status = order.get('status', '').lower()
+                
+                # Determine broker outcome
+                if type_ == "market":
+                    status = "filled"
+                    fill_price = fill_price or signal.entry_price or 0.0
+                elif order_status in ['filled', 'executed']:
+                    status = "filled"
+                    fill_price = fill_price or signal.entry_price or 0.0
+                elif order_status in ['pending', 'working', 'accepted']:
+                    status = "pending"
+                    fill_price = signal.entry_price or 0.0
+                elif order_status == 'partially_filled':
+                    status = "partially_filled"
+                    fill_price = fill_price or signal.entry_price or 0.0
+                else:
+                    status = "pending"
+                    fill_price = signal.entry_price or 0.0
+                
+                # For filled market orders, fetch position details if needed
+                if status == "filled" and not position_id:
                     try:
-                        market_price = await client.get_market_price(signal.symbol)
-                        fill_price = market_price if market_price else 0.0
-                    except Exception:
+                        # Try to resolve position_id for filled market orders
+                        for attempt in range(5):
+                            try:
+                                resolved_position_id = await client.get_position_id_from_order_id(order_id)
+                                if resolved_position_id:
+                                    position_id = resolved_position_id
+                                    break
+                            except:
+                                pass
+                            await asyncio.sleep(0.2)
+                    except:
                         pass
-            
-            logger.info(
-                f"[{account_key}] ✓ Order placed: ID={order_id}, "
-                f"Position={position_id}, Status={status}, Price={fill_price}"
-            )
-            
-            # Step 10: ✅ RECORD IN DATABASE (active_trades table)
-            # This is the CRITICAL step that was missing!
-            signal_id = f"{signal.channel_id}_{signal.msg_id}"  # Format: channel_id_msg_id
-            
-            active_trade = ActiveTrade(
-                account_key=account_key,
-                channel_id=channel_id,
-                signal_id=signal_id,
-                sub_signal_id=None,  # For multi-TP, will be signal_id_tp1, etc.
-                symbol=signal.symbol,
-                direction=signal.direction,
-                entry_price=fill_price,
-                sl=stop_loss,
-                tp=take_profit,
-                lot_size=lot_size,
-                tl_order_id=str(order_id) if order_id else None,
-                tl_position_id=str(position_id) if position_id else None,
-                status=status,  # 'filled', 'pending', or 'partially_filled'
-                risk_usd=trade_risk
-            )
-            
-            trade_id = await self.db.add_active_trade(active_trade)
-            
-            if trade_id:
+                
+                if status == "filled" and fill_price == 0.0 and position_id:
+                    try:
+                        all_positions = await client.get_all_positions()
+                        position_info = next((p for p in all_positions if p.get('id') == position_id), None)
+                        if position_info:
+                            fill_price = float(position_info.get('openPrice', 0.0))
+                    except:
+                        pass
+                
+                logger.info(
+                    f"[{account_key}] ✓ Order placed: ID={order_id}, "
+                    f"Position={position_id}, Status={status}, Price={fill_price}"
+                )
+                
+                # STEP 10: CRITICAL - Persist to database WITH ROLLBACK ON FAILURE
+                signal_id = f"{signal.channel_id}_{signal.msg_id}"
+                
+                active_trade = ActiveTrade(
+                    account_key=account_key,
+                    channel_id=channel_id,
+                    signal_id=signal_id,
+                    sub_signal_id=None,
+                    symbol=signal.symbol,
+                    direction=signal.direction,
+                    entry_price=fill_price,
+                    sl=stop_loss,
+                    tp=take_profit,
+                    lot_size=lot_size,
+                    tl_order_id=str(order_id) if order_id else None,
+                    tl_position_id=str(position_id) if position_id else None,
+                    status=status,
+                    risk_usd=trade_risk
+                )
+                
+                trade_id = await self.db.add_active_trade(active_trade)
+                
+                if not trade_id:
+                    # CRITICAL: DB WRITE FAILED - INITIATE ROLLBACK
+                    rollback_attempted = True
+                    logger.critical(
+                        f"[{account_key}] ❌ DB WRITE FAILED for order {order_id} - "
+                        f"INITIATING ROLLBACK"
+                    )
+                    
+                    # Determine rollback action based on broker state
+                    if status == "filled" and position_id:
+                        # Position is filled - close it
+                        try:
+                            await client.close_position(int(position_id))
+                            logger.warning(
+                                f"[{account_key}] ✓ ROLLBACK: Closed filled position {position_id}"
+                            )
+                            return {
+                                "status": "rolled_back",
+                                "reason": "DB write failed - position closed on broker",
+                                "order_id": order_id,
+                                "position_id": position_id
+                            }
+                        except Exception as rollback_error:
+                            logger.critical(
+                                f"[{account_key}] ❌ ROLLBACK FAILED: Could not close position {position_id}: "
+                                f"{rollback_error}. MANUAL INTERVENTION REQUIRED. "
+                                f"Account={account_key}, Symbol={signal.symbol}, OrderID={order_id}, "
+                                f"PositionID={position_id}"
+                            )
+                            return {
+                                "status": "rollback_failed",
+                                "reason": f"DB failed AND rollback failed: {rollback_error}",
+                                "order_id": order_id,
+                                "position_id": position_id,
+                                "requires_manual_intervention": True
+                            }
+                    
+                    elif status == "pending" and order_id:
+                        # Order is pending - cancel it
+                        try:
+                            await client.cancel_order(order_id)
+                            logger.warning(
+                                f"[{account_key}] ✓ ROLLBACK: Cancelled pending order {order_id}"
+                            )
+                            return {
+                                "status": "rolled_back",
+                                "reason": "DB write failed - pending order cancelled",
+                                "order_id": order_id
+                            }
+                        except Exception as rollback_error:
+                            logger.critical(
+                                f"[{account_key}] ❌ ROLLBACK FAILED: Could not cancel order {order_id}: "
+                                f"{rollback_error}. MANUAL INTERVENTION REQUIRED. "
+                                f"Account={account_key}, Symbol={signal.symbol}, OrderID={order_id}"
+                            )
+                            return {
+                                "status": "rollback_failed",
+                                "reason": f"DB failed AND rollback failed: {rollback_error}",
+                                "order_id": order_id,
+                                "requires_manual_intervention": True
+                            }
+                    
+                    elif status == "partially_filled":
+                        # Partial fill - try to close position
+                        logger.critical(
+                            f"[{account_key}] ⚠️ PARTIAL FILL ROLLBACK: Order {order_id} partially filled. "
+                            f"Attempting to close any open position."
+                        )
+                        if position_id:
+                            try:
+                                await client.close_position(int(position_id))
+                                logger.warning(f"[{account_key}] ✓ ROLLBACK: Closed partially filled position")
+                                return {
+                                    "status": "rolled_back",
+                                    "reason": "DB failed - partially filled position closed",
+                                    "order_id": order_id,
+                                    "position_id": position_id
+                                }
+                            except Exception as rollback_error:
+                                logger.critical(
+                                    f"[{account_key}] ❌ PARTIAL FILL ROLLBACK FAILED: {rollback_error}. "
+                                    f"MANUAL INTERVENTION REQUIRED."
+                                )
+                                return {
+                                    "status": "rollback_failed",
+                                    "reason": f"Partial fill rollback failed: {rollback_error}",
+                                    "requires_manual_intervention": True
+                                }
+                    
+                    # Unknown state
+                    raise Exception(f"DB write failed with unknown broker state: {status}")
+                
+                # SUCCESS - DB write succeeded
                 logger.info(
                     f"[{account_key}] ✓ Trade recorded: ID={trade_id}, "
                     f"Signal={signal_id}, Status={status}"
@@ -606,8 +699,7 @@ class TradeExecutor:
                         logger.debug(f"[{account_key}] Resolving position_id for order {order_id}")
                         
                         # PRIMARY METHOD: Use SDK's built-in order→position lookup
-                        # This is the most reliable method for multi-position scenarios
-                        for attempt in range(10):  # Retry up to 5 seconds (10 × 0.5s)
+                        for attempt in range(10):
                             try:
                                 position_id = await client.get_position_id_from_order_id(order_id)
                                 
@@ -627,17 +719,13 @@ class TradeExecutor:
                             if position_id is not None:
                                 break
                             
-                            await asyncio.sleep(0.5)  # Wait before retry
+                            await asyncio.sleep(0.5)
                         
-                        # FALLBACK METHOD: Scan positions (only if primary method failed)
+                        # FALLBACK METHOD: Scan positions if primary failed
                         if position_id is None:
-                            logger.warning(
-                                f"[{account_key}] Primary lookup failed, falling back to position scan"
-                            )
+                            logger.warning(f"[{account_key}] Primary lookup failed, falling back to position scan")
                             
                             positions = await client.get_all_positions()
-                            
-                            # Get existing position IDs to exclude
                             active_trades_list = await self.db.get_active_trades(account_key)
                             existing_ids = {
                                 str(t.tl_position_id) 
@@ -645,7 +733,6 @@ class TradeExecutor:
                                 if t.tl_position_id and t.trade_id != trade_id
                             }
                             
-                            # Find candidates: matching instrument, not already tracked, matching side
                             candidates = [
                                 p for p in positions
                                 if p.get('tradableInstrumentId') == instrument_id
@@ -654,65 +741,65 @@ class TradeExecutor:
                             ]
                             
                             if len(candidates) == 1:
-                                # Exactly one match - safe to use
                                 position_id = candidates[0].get('id')
                                 await self.db.update_trade_position_id(trade_id, str(position_id))
-                                logger.info(
-                                    f"[{account_key}] ✓ Matched position_id {position_id} "
-                                    f"by instrument+side (fallback method)"
-                                )
+                                logger.info(f"[{account_key}] ✓ Matched position_id {position_id} by instrument+side")
                             elif len(candidates) > 1:
-                                # Ambiguous - DO NOT GUESS
                                 logger.error(
                                     f"[{account_key}] ❌ CRITICAL: Cannot resolve position_id for order {order_id}. "
-                                    f"Found {len(candidates)} candidates for {signal.symbol} {side}. "
-                                    f"Manual review required. Trade ID: {trade_id}"
+                                    f"Found {len(candidates)} candidates. Trade ID: {trade_id}"
                                 )
                             else:
-                                # No candidates found
-                                logger.error(
-                                    f"[{account_key}] ❌ No position found for order {order_id}. "
-                                    f"Instrument: {instrument_id}, Side: {side}. Trade ID: {trade_id}"
-                                )
+                                logger.error(f"[{account_key}] ❌ No position found for order {order_id}. Trade ID: {trade_id}")
                                 
                     except Exception as e:
-                        logger.error(
-                            f"[{account_key}] Position resolution failed for trade {trade_id}: {e}"
-                        )
-                if status == "filled":
-                    logger.info(
-                        f"[{account_key}] ✅ Trade recorded in database: trade_id={trade_id} (FILLED)"
-                    )
-                elif status in ["new", "pending"]:  # TradeLocker uses 'new' for pending orders
-                    logger.info(
-                        f"[{account_key}] ✅ Pending order recorded in database: trade_id={trade_id} "
-                        f"(will be monitored until filled or expired)"
-                    )
-                else:
-                    logger.info(
-                        f"[{account_key}] ✅ Trade recorded in database: trade_id={trade_id} ({status.upper()})"
-                    )
-            else:
-                logger.error(
-                    f"[{account_key}] ❌ Failed to record trade in database!"
-                )
+                        logger.error(f"[{account_key}] Position resolution failed for trade {trade_id}: {e}")
+                
+                # Step 11: Return result
+                return {
+                    "status": status,
+                    "order_id": order_id,
+                    "position_id": position_id,
+                    "fill_price": fill_price,
+                    "lot_size": lot_size,
+                    "instrument_id": instrument_id,
+                    "trade_id": trade_id,
+                    "risk_usd": trade_risk,
+                    "order_type": type_
+                }
             
-            # Step 11: Return result
-            return {
-                "status": status,
-                "order_id": order_id,
-                "position_id": position_id,
-                "fill_price": fill_price,
-                "lot_size": lot_size,
-                "instrument_id": instrument_id,
-                "trade_id": trade_id,  # Database trade ID
-                "risk_usd": trade_risk,
-                "order_type": type_
-            }
+            except Exception as inner_e:
+                # Inner try block exception (order placement or DB write)
+                logger.error(f"[{account_key}] Order execution error: {inner_e}")
+                if rollback_attempted:
+                    logger.critical(f"[{account_key}] Exception during rollback: {inner_e}")
+                    return {
+                        "status": "rollback_failed",
+                        "reason": str(inner_e),
+                        "order_id": order_id,
+                        "position_id": position_id,
+                        "requires_manual_intervention": True
+                    }
+                raise
             
         except Exception as e:
             logger.error(f"[{account_key}] Execution error: {e}")
             
+            # If rollback was attempted and this exception is from rollback, mark appropriately
+            if rollback_attempted:
+                logger.critical(
+                    f"[{account_key}] Exception during rollback attempt: {e}. "
+                    f"OrderID={order_id}, PositionID={position_id}, Status={status}"
+                )
+                return {
+                    "status": "rollback_failed",
+                    "reason": str(e),
+                    "order_id": order_id,
+                    "position_id": position_id,
+                    "requires_manual_intervention": True
+                }
+            
+            # Normal execution failure (order placement failed)
             # Record failed trade in database
             signal_id = f"{signal.channel_id}_{signal.msg_id}"
             
