@@ -56,7 +56,9 @@ async def get_current_user_id(
     token = authorization.split("Bearer ")[1]
     
     try:
-        decoded = firebase_auth.verify_id_token(token)
+        # Verify token with clock skew tolerance (30 seconds)
+        # This accommodates normal clock drift while maintaining security
+        decoded = firebase_auth.verify_id_token(token, clock_skew_seconds=30)
         user_id = decoded['uid']
         logger.debug(f"Authenticated user: {user_id}")
         return user_id
