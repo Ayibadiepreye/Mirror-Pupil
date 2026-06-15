@@ -232,10 +232,17 @@ export function AccountsPage() {
   );
 }
 
+// Type for discovered accounts from TradeLocker (not yet added to database)
+interface DiscoveredAccount {
+  id: string;
+  number: string;
+  balance: number;
+}
+
 function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const qc = useQueryClient();
   const [creds, setCreds] = useState({ email: "", password: "", server: "", prop_firm: "" });
-  const [discovered, setDiscovered] = useState<Account[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredAccount[]>([]);
   const [manual, setManual] = useState({
     tl_email: "", tl_password: "", tl_prop_firm: "", tl_server: "", tl_account_id: "",
     display_name: "",
@@ -248,16 +255,31 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   });
 
   const addOneM = useMutation({
-    mutationFn: (a: Account) => accountsApi.create({
-      tl_email: a.tl_email, tl_password: creds.password, tl_prop_firm: creds.prop_firm,
-      tl_server: a.tl_server, tl_account_id: a.tl_account_id, display_name: a.display_name,
+    mutationFn: (a: DiscoveredAccount) => accountsApi.create({
+      credential_key: creds.email,
+      tl_email: creds.email,
+      tl_password: creds.password,
+      tl_prop_firm: creds.prop_firm,
+      tl_server: creds.server,
+      tl_account_id: a.id,
+      display_name: a.number,
+      initial_balance: a.balance,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: QK.accounts }); toast.success("Account added"); },
     onError: () => toast.error("Failed to add account"),
   });
 
   const manualAddM = useMutation({
-    mutationFn: () => accountsApi.create(manual),
+    mutationFn: () => accountsApi.create({
+      credential_key: manual.tl_email,
+      tl_email: manual.tl_email,
+      tl_password: manual.tl_password,
+      tl_prop_firm: manual.tl_prop_firm,
+      tl_server: manual.tl_server,
+      tl_account_id: manual.tl_account_id,
+      display_name: manual.display_name || manual.tl_account_id,
+      initial_balance: 0, // User will need to sync or manually set this later
+    }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: QK.accounts }); toast.success("Account added"); onOpenChange(false); },
     onError: () => toast.error("Failed to add account"),
   });
@@ -269,16 +291,23 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <DialogTitle>Add account</DialogTitle>
           <DialogDescription>Discover from TradeLocker or enter details manually.</DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="discover">
-          <TabsList className="grid grid-cols-2">
+        <Tabs defaultValue="discover" className="w-full">
+          <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="discover">Discover</TabsTrigger>
             <TabsTrigger value="manual">Manual</TabsTrigger>
           </TabsList>
           <TabsContent value="discover" className="space-y-3 pt-3">
-            <Field label="Email"><Input value={creds.email} onChange={(e) => setCreds({ ...creds, email: e.target.value })} /></Field>
-            <Field label="Password"><Input type="password" value={creds.password} onChange={(e) => setCreds({ ...creds, password: e.target.value })} /></Field>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Email</Label>
+              <Input value={creds.email} onChange={(e) => setCreds({ ...creds, email: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Password</Label>
+              <Input type="password" value={creds.password} onChange={(e) => setCreds({ ...creds, password: e.target.value })} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Server">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Server</Label>
                 <Select value={creds.server} onValueChange={(v) => setCreds({ ...creds, server: v })}>
                   <SelectTrigger><SelectValue placeholder="Select environment" /></SelectTrigger>
                   <SelectContent>
@@ -286,8 +315,11 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                     <SelectItem value="demo">Demo</SelectItem>
                   </SelectContent>
                 </Select>
-              </Field>
-              <Field label="Broker / Prop firm"><Input value={creds.prop_firm} onChange={(e) => setCreds({ ...creds, prop_firm: e.target.value })} /></Field>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Broker / Prop firm</Label>
+                <Input value={creds.prop_firm} onChange={(e) => setCreds({ ...creds, prop_firm: e.target.value })} />
+              </div>
             </div>
             <Button onClick={() => discoverM.mutate()} disabled={discoverM.isPending} className="w-full bg-[color:var(--mp-red)] hover:bg-[color:var(--mp-red)]/90 text-white">
               {discoverM.isPending ? "Discovering…" : "Discover accounts"}
@@ -295,10 +327,10 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             {discovered.length > 0 && (
               <ul className="border border-[color:var(--mp-border)] rounded-md divide-y divide-[color:var(--mp-border)] max-h-56 overflow-y-auto">
                 {discovered.map((a) => (
-                  <li key={a.account_key} className="flex items-center justify-between p-2">
+                  <li key={a.id} className="flex items-center justify-between p-2">
                     <div>
-                      <div className="text-sm">{a.display_name ?? a.tl_account_id}</div>
-                      <div className="font-mono text-[11px] text-[color:var(--mp-text-dim)]">{a.tl_server}</div>
+                      <div className="text-sm">Account {a.number}</div>
+                      <div className="font-mono text-[11px] text-[color:var(--mp-text-dim)]">${a.balance.toFixed(2)}</div>
                     </div>
                     <Button size="sm" variant="outline" onClick={() => addOneM.mutate(a)} disabled={addOneM.isPending}>Add</Button>
                   </li>
@@ -307,11 +339,21 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             )}
           </TabsContent>
           <TabsContent value="manual" className="space-y-3 pt-3">
-            <Field label="Email"><Input value={manual.tl_email} onChange={(e) => setManual({ ...manual, tl_email: e.target.value })} /></Field>
-            <Field label="Password"><Input type="password" value={manual.tl_password} onChange={(e) => setManual({ ...manual, tl_password: e.target.value })} /></Field>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Email</Label>
+              <Input value={manual.tl_email} onChange={(e) => setManual({ ...manual, tl_email: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Password</Label>
+              <Input type="password" value={manual.tl_password} onChange={(e) => setManual({ ...manual, tl_password: e.target.value })} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Broker / Prop firm"><Input value={manual.tl_prop_firm} onChange={(e) => setManual({ ...manual, tl_prop_firm: e.target.value })} /></Field>
-              <Field label="Server">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Broker / Prop firm</Label>
+                <Input value={manual.tl_prop_firm} onChange={(e) => setManual({ ...manual, tl_prop_firm: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Server</Label>
                 <Select value={manual.tl_server} onValueChange={(v) => setManual({ ...manual, tl_server: v })}>
                   <SelectTrigger><SelectValue placeholder="Select environment" /></SelectTrigger>
                   <SelectContent>
@@ -319,11 +361,17 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                     <SelectItem value="demo">Demo</SelectItem>
                   </SelectContent>
                 </Select>
-              </Field>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Account ID"><Input value={manual.tl_account_id} onChange={(e) => setManual({ ...manual, tl_account_id: e.target.value })} /></Field>
-              <Field label="Display name"><Input value={manual.display_name} onChange={(e) => setManual({ ...manual, display_name: e.target.value })} /></Field>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Account ID</Label>
+                <Input value={manual.tl_account_id} onChange={(e) => setManual({ ...manual, tl_account_id: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">Display name</Label>
+                <Input value={manual.display_name} onChange={(e) => setManual({ ...manual, display_name: e.target.value })} />
+              </div>
             </div>
             <DialogFooter>
               <Button onClick={() => manualAddM.mutate()} disabled={manualAddM.isPending} className="bg-[color:var(--mp-red)] hover:bg-[color:var(--mp-red)]/90 text-white">
