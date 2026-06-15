@@ -16,8 +16,9 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/mp/AppShell";
 import { ConfirmProvider } from "@/components/mp/ConfirmDialog";
-import { AuthProvider } from "@/lib/mp/auth-context";
+import { AuthProvider, useAuth } from "@/lib/mp/auth-context";
 import { getSession } from "@/lib/mp/auth";
+import { auth } from "@/lib/firebase";
 
 function NotFoundComponent() {
   return (
@@ -156,13 +157,15 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ConfirmProvider>
-          {isAuthRoute ? (
-            <Outlet />
-          ) : (
-            <AppShell>
+          <PendingApprovalGate isAuthRoute={isAuthRoute}>
+            {isAuthRoute ? (
               <Outlet />
-            </AppShell>
-          )}
+            ) : (
+              <AppShell>
+                <Outlet />
+              </AppShell>
+            )}
+          </PendingApprovalGate>
           <Toaster
             theme="dark"
             position="top-right"
@@ -176,4 +179,68 @@ function RootComponent() {
       </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+// Component to show pending approval screen
+function PendingApprovalGate({ children, isAuthRoute }: { children: ReactNode; isAuthRoute: boolean }) {
+  const { user, loading, isApproved } = useAuth();
+  
+  // Don't interfere with auth routes
+  if (isAuthRoute) return <>{children}</>;
+  
+  // Still loading
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent motion-reduce:animate-[spin_1.5s_linear_infinite]" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // User is logged in but not approved
+  if (user && !isApproved) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-yellow-500/10">
+            <svg
+              className="h-8 w-8 text-yellow-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Account Pending Approval</h1>
+          <p className="mt-4 text-muted-foreground">
+            Your account has been created successfully, but it requires administrator approval before you can access the system.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Email: <span className="font-medium text-foreground">{user.email}</span>
+          </p>
+          <p className="mt-6 text-sm text-muted-foreground">
+            You'll receive an email once your account is approved. Please contact your administrator if you have any questions.
+          </p>
+          <button
+            onClick={() => auth.signOut()}
+            className="mt-8 inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // User is approved or not logged in
+  return <>{children}</>;
 }

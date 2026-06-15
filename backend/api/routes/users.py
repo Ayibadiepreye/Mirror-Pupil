@@ -27,6 +27,21 @@ class UserResponse(BaseModel):
     
     class Config:
         from_attributes = True
+        json_encoders = {
+            # Automatically convert datetime to ISO string
+            'datetime': lambda v: v.isoformat() if hasattr(v, 'isoformat') else str(v)
+        }
+    
+    @classmethod
+    def from_db(cls, user_dict: dict):
+        """Create UserResponse from database dict, handling datetime conversion."""
+        if user_dict and 'created_at' in user_dict:
+            created_at = user_dict['created_at']
+            if hasattr(created_at, 'isoformat'):
+                user_dict['created_at'] = created_at.isoformat()
+            elif not isinstance(created_at, str):
+                user_dict['created_at'] = str(created_at)
+        return cls(**user_dict)
 
 
 class CreateUserRequest(BaseModel):
@@ -73,7 +88,7 @@ async def get_current_user_info(
         if user and 'created_at' in user:
             user['created_at'] = user['created_at'].isoformat() if hasattr(user['created_at'], 'isoformat') else str(user['created_at'])
         
-        return UserResponse(**user)
+        return UserResponse.from_db(user)
         
     except HTTPException:
         raise
@@ -93,7 +108,7 @@ async def list_pending_users(
     """List users pending approval (super admin only)."""
     try:
         users = await db.get_pending_users()
-        return [UserResponse(**u) for u in users]
+        return [UserResponse.from_db(u) for u in users]
     except Exception as e:
         logger.error(f"Failed to get pending users: {e}")
         raise HTTPException(
@@ -110,7 +125,7 @@ async def list_all_users(
     """List all users (super admin only)."""
     try:
         users = await db.get_all_users()
-        return [UserResponse(**u) for u in users]
+        return [UserResponse.from_db(u) for u in users]
     except Exception as e:
         logger.error(f"Failed to get all users: {e}")
         raise HTTPException(
