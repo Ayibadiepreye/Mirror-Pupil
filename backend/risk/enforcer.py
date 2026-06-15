@@ -106,9 +106,12 @@ class RiskEnforcer:
         """
         try:
             account_state = await client.get_account_state()
-            equity = float(account_state.get('equity', 0.0))
+            balance = float(account_state.get('balance', 0.0) or 0.0)
+            open_net_pnl = float(account_state.get('openNetPnL', 0.0) or 0.0)
+            open_gross_pnl = float(account_state.get('openGrossPnL', 0.0) or 0.0)
+            equity = balance + (open_net_pnl or open_gross_pnl)
             if equity > 0:
-                logger.debug(f"[{account_key}] Fetched equity: ${equity:.2f}")
+                logger.debug(f"[{account_key}] Fetched equity: ${equity:.2f} (balance=${balance:.2f}, floating P&L=${open_net_pnl:.2f})")
                 return equity
         except Exception as e:
             logger.warning(f"[{account_key}] Failed to fetch equity from TradeLocker: {e} - FALLING BACK TO BALANCE")

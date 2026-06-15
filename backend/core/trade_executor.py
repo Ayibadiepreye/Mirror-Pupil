@@ -620,7 +620,7 @@ class TradeExecutor:
                     elif status == "pending" and order_id:
                         # Order is pending - cancel it
                         try:
-                            await client.cancel_order(order_id)
+                            await client.delete_order(order_id=order_id)
                             logger.warning(
                                 f"[{account_key}] ✓ ROLLBACK: Cancelled pending order {order_id}"
                             )
