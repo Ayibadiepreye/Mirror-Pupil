@@ -69,6 +69,10 @@ async def get_current_user_info(
             
             logger.info(f"✓ Auto-created user record for {firebase_user.email}")
         
+        # Convert datetime to string for JSON serialization
+        if user and 'created_at' in user:
+            user['created_at'] = user['created_at'].isoformat() if hasattr(user['created_at'], 'isoformat') else str(user['created_at'])
+        
         return UserResponse(**user)
         
     except HTTPException:
