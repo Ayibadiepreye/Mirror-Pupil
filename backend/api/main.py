@@ -225,15 +225,24 @@ app = FastAPI(
 )
 
 
-# CORS configuration for Telegram Web App
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS configuration for Telegram Web App and development
+# For production, restrict to specific origins
+import os
+DEV_MODE = os.getenv("AUTH_DISABLED", "false").lower() == "true"
+
+if DEV_MODE:
+    # Development: Allow all localhost origins
+    cors_origins = ["*"]
+else:
+    # Production: Specific origins only
+    cors_origins = [
         "https://web.telegram.org",
         "https://k.web.telegram.org",
-        "http://localhost:5173",  # Vite dev
-        "http://localhost:3000",  # alt dev
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

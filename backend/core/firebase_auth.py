@@ -84,8 +84,8 @@ async def get_current_user(
     Raises:
         HTTPException: If user not found or not approved
     """
+    from ..database import DatabaseManager
     from ..api.main import get_db
-    from ...database import DatabaseManager
     
     # Get database manager from dependency injection
     db: DatabaseManager = get_db()
