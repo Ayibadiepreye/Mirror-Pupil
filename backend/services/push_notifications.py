@@ -84,10 +84,38 @@ class PushNotificationService:
             
         except messaging.UnregisteredError:
             logger.warning(f"FCM token unregistered or invalid: {fcm_token[:20]}...")
+            await self._cleanup_invalid_token(fcm_token)
             return False
         except Exception as e:
             logger.error(f"Failed to send push notification: {e}")
             return False
+    
+    async def _cleanup_invalid_token(self, fcm_token: str):
+        """Remove invalid FCM token from database with retry."""
+        try:
+            from ..database.manager import DatabaseManager
+            db = DatabaseManager()
+            if not db.pool:
+                return
+            
+            async with db.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE users SET fcm_token = NULL WHERE fcm_token = $1",
+                    fcm_token
+                )
+                logger.info(f"✓ Cleaned up invalid FCM token: {fcm_token[:20]}...")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup invalid token (will retry once): {e}")
+            try:
+                async with db.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE users SET fcm_token = NULL WHERE fcm_token = $1",
+                        fcm_token
+                    )
+                    logger.info(f"✓ Cleaned up invalid FCM token (retry): {fcm_token[:20]}...")
+            except Exception as retry_error:
+                logger.error(f"Failed to cleanup invalid token after retry: {retry_error}")
+                pass
     
     async def send_to_multiple(
         self,
