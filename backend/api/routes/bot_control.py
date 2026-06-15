@@ -11,6 +11,7 @@ from ...database import DatabaseManager
 from ...core.trade_executor import TradeExecutor
 from ...core.firebase_auth import require_super_admin
 from ...core.bot_state import get_bot_state
+from ...risk.calculator import calculate_usd_pnl
 from ..main import get_db, get_executor
 
 
@@ -174,6 +175,10 @@ async def force_close_all_positions(
                         # Close position
                         await client['client'].close_position(int(trade.tl_position_id))
                         
+                    if client and trade.tl_position_id:
+                        # Close position
+                        await client['client'].close_position(int(trade.tl_position_id))
+                        
                         # Get current market price
                         try:
                             positions = await client['client'].get_all_positions()
@@ -187,9 +192,23 @@ async def force_close_all_positions(
                         except:
                             current_price = trade.entry_price
                         
-                        # Calculate PnL
-                        pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
-                        pnl = pips * trade.lot_size * 100000  # Approximate
+                        # Calculate PnL using proper risk calculator
+                        try:
+                            pnl = await calculate_usd_pnl(
+                                symbol=trade.symbol,
+                                entry_price=trade.entry_price,
+                                exit_price=current_price,
+                                lot_size=trade.lot_size,
+                                direction=trade.direction,
+                                client=client['client'],
+                                instrument=None  # Will fetch from client
+                            )
+                        except Exception as e:
+                            logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
+                            # Fallback to simple calculation
+                            pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                            pnl = pips * trade.lot_size * 100000
+                        
                         outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                         
                         # Mark as closed in database
@@ -263,9 +282,23 @@ async def force_close_account_positions(
                     except:
                         current_price = trade.entry_price
                     
-                    # Calculate PnL
-                    pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
-                    pnl = pips * trade.lot_size * 100000  # Approximate
+                    # Calculate PnL using proper risk calculator
+                    try:
+                        pnl = await calculate_usd_pnl(
+                            symbol=trade.symbol,
+                            entry_price=trade.entry_price,
+                            exit_price=current_price,
+                            lot_size=trade.lot_size,
+                            direction=trade.direction,
+                            client=client['client'],
+                            instrument=None  # Will fetch from client
+                        )
+                    except Exception as e:
+                        logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
+                        # Fallback to simple calculation
+                        pips = (current_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - current_price)
+                        pnl = pips * trade.lot_size * 100000
+                    
                     outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                     
                     # Mark as closed in database

@@ -215,6 +215,83 @@ class TradeExecutor:
         # Limit not reached, execute normally
         return await self._execute_on_account(signal, channel_id, account_key)
     
+    async def _calculate_lot_size_from_risk(
+        self,
+        account: Account,
+        profile: RiskProfile,
+        entry_price: float,
+        sl_price: float,
+        symbol: str,
+        client,
+        instrument: dict
+    ) -> float:
+        """
+        Calculate lot size based on max_risk_per_trade_pct from risk profile.
+        
+        Formula: lot_size = (balance * max_risk_pct) / sl_distance_usd
+        
+        Args:
+            account: Account object
+            profile: Risk profile with max_risk_per_trade_pct
+            entry_price: Entry price
+            sl_price: Stop loss price
+            symbol: Trading symbol
+            client: TradeLocker client
+            instrument: Instrument details
+        
+        Returns:
+            Calculated lot size rounded to lot_step
+        """
+        if not sl_price or sl_price <= 0:
+            # No SL - use default lot size
+            logger.warning(f"No stop loss for {symbol}, using default lot size")
+            return self.default_lot_size
+        
+        # Account lot size override takes precedence
+        if account.lot_size_override and account.lot_size_override > 0:
+            logger.debug(f"Using account lot size override: {account.lot_size_override}")
+            return account.lot_size_override
+        
+        # Calculate risk in USD per lot
+        from ..risk.calculator import calculate_usd_risk
+        
+        try:
+            risk_per_lot = await calculate_usd_risk(
+                symbol=symbol,
+                entry_price=entry_price,
+                sl_price=sl_price,
+                lot_size=1.0,  # Calculate for 1 lot
+                client=client,
+                instrument=instrument
+            )
+            
+            if risk_per_lot <= 0:
+                logger.warning(f"Invalid risk calculation for {symbol}, using default lot size")
+                return self.default_lot_size
+            
+            # Calculate desired risk amount
+            balance = account.current_balance or account.initial_balance
+            max_risk_amount = balance * (profile.max_risk_per_trade_pct / 100.0)
+            
+            # Calculate lot size
+            calculated_lot_size = max_risk_amount / risk_per_lot
+            
+            # Round to lot step
+            lot_step = instrument.get('lot_step', 0.01)
+            rounded_lot_size = client.round_lot_size(calculated_lot_size, lot_step)
+            
+            logger.info(
+                f"[{account.account_key}] Calculated lot size: {rounded_lot_size} "
+                f"(balance=${balance:.2f}, max_risk={profile.max_risk_per_trade_pct}%, "
+                f"risk_per_lot=${risk_per_lot:.2f})"
+            )
+            
+            return rounded_lot_size
+            
+        except Exception as e:
+            logger.error(f"Lot size calculation failed for {symbol}: {e}, using default")
+            return self.default_lot_size
+    
     async def _execute_on_account(
         self,
         signal: ParsedSignal,
@@ -313,32 +390,37 @@ class TradeExecutor:
             # 4c. Get instrument details using new wrapper method
             instrument = await client.get_instrument(signal.symbol)
             
-            # Step 5: Validate trade with risk enforcer (now that we have instrument)
+            # Step 4d: Calculate lot size from risk profile BEFORE risk validation
+            entry_price_for_calc = signal.entry_price
+            if entry_price_for_calc is None or entry_price_for_calc == 0.0:
+                # Market order - fetch current price
+                current_market_price = await client.get_market_price(signal.symbol)
+                if current_market_price and current_market_price > 0:
+                    entry_price_for_calc = current_market_price
+                    logger.info(f"[{account_key}] Market order - using current price {current_market_price:.5f}")
+                else:
+                    entry_price_for_calc = 0.0
+                    logger.warning(f"[{account_key}] Could not fetch market price for {signal.symbol}")
+            
+            # Calculate lot size based on risk profile
+            calculated_lot_size = await self._calculate_lot_size_from_risk(
+                account=account_db,
+                profile=profile,
+                entry_price=entry_price_for_calc,
+                sl_price=signal.sl,
+                symbol=signal.symbol,
+                client=client,
+                instrument=instrument
+            )
+            
+            # Step 5: Validate trade with risk enforcer (using calculated lot size)
             if self.risk_enforcer and signal.sl:
-                # For market orders (entry_price=None), fetch current market price for risk calculation
-                entry_price_for_risk = signal.entry_price
-                if entry_price_for_risk is None or entry_price_for_risk == 0.0:
-                    # Market order - fetch current price
-                    current_market_price = await client.get_market_price(signal.symbol)
-                    if current_market_price and current_market_price > 0:
-                        entry_price_for_risk = current_market_price
-                        logger.info(
-                            f"[{account_key}] Market order - using current price {current_market_price:.5f} "
-                            f"for risk calculation"
-                        )
-                    else:
-                        logger.warning(
-                            f"[{account_key}] Could not fetch market price for {signal.symbol}, "
-                            f"risk calculation may be inaccurate"
-                        )
-                        entry_price_for_risk = 0.0
-                
                 validation = await self.risk_enforcer.validate_trade(
                     account=account_db,
                     profile=profile,
-                    entry_price=entry_price_for_risk,
+                    entry_price=entry_price_for_calc,
                     sl_price=signal.sl,
-                    lot_size=self.default_lot_size,
+                    lot_size=calculated_lot_size,  # Use calculated lot size
                     symbol=signal.symbol,
                     client=client,  # Pass TradeLocker client for live price fetching
                     instrument=instrument
@@ -357,10 +439,8 @@ class TradeExecutor:
             else:
                 trade_risk = 0.0  # No SL = no risk calculation
             
-            lot_step = instrument.get('lot_step', 0.01)
-            
-            # Step 6: Round lot size
-            lot_size = client.round_lot_size(self.default_lot_size, lot_step)
+            # Step 6: Use calculated lot size (already rounded)
+            lot_size = calculated_lot_size
             
             # Step 7: Prepare order parameters
             side = signal.direction.lower()  # "buy" or "sell"

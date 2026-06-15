@@ -86,6 +86,31 @@ class RiskEnforcer:
             except Exception as e:
                 logger.error(f"Breach monitoring error: {e}")
     
+    async def _get_account_equity(self, account_key: str, client) -> float:
+        """
+        Get current account equity (balance + floating P&L) from TradeLocker.
+        Falls back to current_balance if fetch fails.
+        
+        Args:
+            account_key: Account identifier
+            client: TradeLocker client
+        
+        Returns:
+            Current equity in USD
+        """
+        try:
+            account_state = await client.get_account_state()
+            equity = float(account_state.get('equity', 0.0))
+            if equity > 0:
+                logger.debug(f"[{account_key}] Fetched equity: ${equity:.2f}")
+                return equity
+        except Exception as e:
+            logger.warning(f"[{account_key}] Failed to fetch equity from TradeLocker: {e}")
+        
+        # Fallback to balance
+        account = await self.db.get_account(account_key)
+        return account.current_balance or 0.0
+    
     async def validate_trade(
         self,
         account: Account,
@@ -157,9 +182,8 @@ class RiskEnforcer:
         # Calculate existing portfolio risk
         existing_risk = sum(trade.risk_usd or 0.0 for trade in active_trades)
         
-        # Calculate current equity (balance + floating P&L)
-        # For now, use balance (floating P&L calculation requires TradeLocker API)
-        current_equity = account.current_balance or 0.0
+        # Calculate current equity (balance + floating P&L from TradeLocker)
+        current_equity = await self._get_account_equity(account.account_key, tl_client) if tl_client else (account.current_balance or 0.0)
         
         # Check 1: Concurrent trade limit
         max_concurrent = account.max_concurrent_trades_override or profile.max_concurrent_trades
@@ -261,7 +285,7 @@ class RiskEnforcer:
             "trade_risk": trade_risk
         }
     
-    async def check_risk_limits(self, account: Account, profile: RiskProfile) -> bool:
+    async def check_risk_limits(self, account: Account, profile: RiskProfile, tl_client=None) -> bool:
         """
         Check if account has breached risk limits.
         
@@ -270,12 +294,16 @@ class RiskEnforcer:
         - Overall loss floor
         - Profit lock trigger
         
+        Args:
+            account: Account to check
+            profile: Risk profile
+            tl_client: TradeLocker client for fetching equity (optional)
+        
         Returns:
             True if breached, False otherwise
         """
-        # Calculate current equity (balance + floating P&L)
-        # For now, use balance (floating P&L requires TradeLocker API)
-        current_equity = account.current_balance or 0.0
+        # Calculate current equity (balance + floating P&L from TradeLocker)
+        current_equity = await self._get_account_equity(account.account_key, tl_client) if tl_client else (account.current_balance or 0.0)
         
         # Check daily loss
         daily_floor = self.calculator.calculate_daily_floor(account, profile)
