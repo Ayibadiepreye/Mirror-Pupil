@@ -1462,6 +1462,10 @@ class DatabaseManager:
     ) -> Optional[int]:
         """Add a new notification. Returns notification_id."""
         try:
+            # Convert metadata dict to JSON string if provided
+            import json
+            metadata_json = json.dumps(metadata) if metadata else None
+            
             async with self.pool.acquire() as conn:
                 notification_id = await conn.fetchval(
                     """
@@ -1470,7 +1474,7 @@ class DatabaseManager:
                     ) VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING notification_id
                     """,
-                    account_key, category, severity, title, message, metadata
+                    account_key, category, severity, title, message, metadata_json
                 )
                 logger.debug(f"✓ Added notification: {title}")
                 return notification_id

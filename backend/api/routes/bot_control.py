@@ -211,22 +211,37 @@ async def force_close_all_positions(
                         
                         logger.info(f"[{account.account_key}] Exit price source: {price_source}, price: {exit_price}")
                         
-                        # Calculate PnL using proper risk calculator
+                        # Get PnL from position (unrealizedPl field) instead of calculating
+                        pnl = None
                         try:
-                            pnl = await calculate_usd_pnl(
-                                symbol=trade.symbol,
-                                entry_price=trade.entry_price,
-                                exit_price=exit_price,
-                                lot_size=trade.lot_size,
-                                direction=trade.direction,
-                                client=client['client'],
-                                instrument=None  # Will fetch from client
-                            )
+                            # Try to get unrealizedPl from the position before closing
+                            positions = await client['client'].get_all_positions()
+                            position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
+                            if position:
+                                pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
+                                logger.info(f"[{account.account_key}] Using unrealizedPl from position: ${pnl:.2f}")
                         except Exception as e:
-                            logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
-                            # Fallback to simple calculation
-                            pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
-                            pnl = pips * trade.lot_size * 100000
+                            logger.warning(f"[{account.account_key}] Could not fetch unrealizedPl: {e}")
+                        
+                        # Fallback: Calculate PnL if unrealizedPl not available
+                        if pnl is None:
+                            try:
+                                pnl = await calculate_usd_pnl(
+                                    symbol=trade.symbol,
+                                    entry_price=trade.entry_price,
+                                    exit_price=exit_price,
+                                    lot_size=trade.lot_size,
+                                    direction=trade.direction,
+                                    client=client['client'],
+                                    instrument=None
+                                )
+                                logger.info(f"[{account.account_key}] Calculated PnL fallback: ${pnl:.2f}")
+                            except Exception as e:
+                                logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
+                                # Last resort fallback
+                                pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
+                                pnl = pips * trade.lot_size * 100000
+                                logger.warning(f"[{account.account_key}] Using simple pip calculation: ${pnl:.2f}")
                         
                         outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                         
@@ -324,22 +339,37 @@ async def force_close_account_positions(
                     
                     logger.info(f"[{account_key}] Exit price source: {price_source}, price: {exit_price}")
                     
-                    # Calculate PnL using proper risk calculator
+                    # Get PnL from position (unrealizedPl field) instead of calculating
+                    pnl = None
                     try:
-                        pnl = await calculate_usd_pnl(
-                            symbol=trade.symbol,
-                            entry_price=trade.entry_price,
-                            exit_price=exit_price,
-                            lot_size=trade.lot_size,
-                            direction=trade.direction,
-                            client=client['client'],
-                            instrument=None  # Will fetch from client
-                        )
+                        # Try to get unrealizedPl from the position before closing
+                        positions = await client['client'].get_all_positions()
+                        position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
+                        if position:
+                            pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
+                            logger.info(f"[{account_key}] Using unrealizedPl from position: ${pnl:.2f}")
                     except Exception as e:
-                        logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
-                        # Fallback to simple calculation
-                        pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
-                        pnl = pips * trade.lot_size * 100000
+                        logger.warning(f"[{account_key}] Could not fetch unrealizedPl: {e}")
+                    
+                    # Fallback: Calculate PnL if unrealizedPl not available
+                    if pnl is None:
+                        try:
+                            pnl = await calculate_usd_pnl(
+                                symbol=trade.symbol,
+                                entry_price=trade.entry_price,
+                                exit_price=exit_price,
+                                lot_size=trade.lot_size,
+                                direction=trade.direction,
+                                client=client['client'],
+                                instrument=None
+                            )
+                            logger.info(f"[{account_key}] Calculated PnL fallback: ${pnl:.2f}")
+                        except Exception as e:
+                            logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
+                            # Last resort fallback
+                            pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
+                            pnl = pips * trade.lot_size * 100000
+                            logger.warning(f"[{account_key}] Using simple pip calculation: ${pnl:.2f}")
                     
                     outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                     
