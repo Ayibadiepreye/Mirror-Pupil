@@ -11,6 +11,7 @@ from .trailing_stop_updater import TrailingStopUpdater, get_trailing_stop_update
 from .balance_reconciliation import BalanceReconciliationMonitor, get_balance_monitor
 from .position_reconciliation import PositionReconciliationMonitor, get_position_reconciliation_monitor
 from .health_monitor import HealthMonitor, get_health_monitor
+from .pnl_updater import LivePnLUpdater, get_pnl_updater
 
 __all__ = [
     "TradeLockerClient",
@@ -29,4 +30,6 @@ __all__ = [
     "get_position_reconciliation_monitor",
     "HealthMonitor",
     "get_health_monitor",
+    "LivePnLUpdater",
+    "get_pnl_updater",
 ]

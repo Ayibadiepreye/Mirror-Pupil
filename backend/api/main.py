@@ -29,6 +29,7 @@ from ..core.balance_reconciliation import get_balance_monitor
 from ..core.trailing_stop_updater import get_trailing_stop_updater
 from ..core.pending_order_monitor import get_pending_order_monitor
 from ..core.position_reconciliation import get_position_reconciliation_monitor
+from ..core.pnl_updater import get_pnl_updater
 from ..telegram_integration import get_telegram_integration
 from ..channels.registry import get_registry
 
@@ -166,6 +167,11 @@ async def lifespan(app: FastAPI):
     position_monitor = await get_position_reconciliation_monitor(db)
     await position_monitor.start_monitoring()
     logger.info("✓ Position reconciliation monitor started")
+    
+    # Initialize live PnL updater (updates every 2 minutes)
+    pnl_updater = get_pnl_updater(db)
+    pnl_updater.start()
+    logger.info("✓ Live PnL updater started (updates every 2 minutes)")
     
     # Initialize health monitor (credential validation every 60 minutes)
     health_monitor = get_health_monitor(account_manager)

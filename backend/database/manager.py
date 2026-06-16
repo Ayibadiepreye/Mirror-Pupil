@@ -1050,6 +1050,29 @@ class DatabaseManager:
             logger.error(f"Failed to mark TP1 hit for trade {trade_id}: {e}")
             return False
     
+    async def update_trade_current_pnl(self, trade_id: int, current_pnl: float) -> bool:
+        """
+        Update current unrealized PnL for an active trade.
+        Called by LivePnLUpdater background service.
+        
+        Args:
+            trade_id: Trade ID
+            current_pnl: Current unrealized P&L from TradeLocker
+        
+        Returns:
+            True if successful
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET current_pnl = $1 WHERE trade_id = $2",
+                    current_pnl, trade_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update current PnL for trade {trade_id}: {e}")
+            return False
+    
     async def move_trade_to_history(
         self,
         trade_id: int,

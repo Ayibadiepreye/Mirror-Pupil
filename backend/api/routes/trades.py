@@ -275,38 +275,7 @@ async def get_all_active_trades(
             trades = await db.get_active_trades(account.account_key)
             all_trades.extend(trades)
         
-        # Enrich trades with live P&L
-        account_manager = get_account_manager()
-        trades_by_account = {}
-        for trade in all_trades:
-            if trade.account_key not in trades_by_account:
-                trades_by_account[trade.account_key] = []
-            trades_by_account[trade.account_key].append(trade)
-        
-        # Fetch positions from TradeLocker per account
-        for account_key, trades in trades_by_account.items():
-            try:
-                account_info = account_manager.get_account(account_key)
-                if not account_info or 'client' not in account_info:
-                    continue
-                
-                client = account_info['client']
-                positions = await client.get_all_positions()
-                
-                # Map positions to trades by tl_position_id
-                position_map = {
-                    pos.get('positionId') or pos.get('id'): pos 
-                    for pos in positions
-                }
-                
-                for trade in trades:
-                    if trade.tl_position_id and trade.tl_position_id in position_map:
-                        pos = position_map[trade.tl_position_id]
-                        trade.current_pnl = pos.get('unrealizedPl', None)
-            except Exception as e:
-                logger.warning(f"Failed to fetch P&L for account {account_key}: {e}")
-                # Continue without P&L data
-        
+        # Return trades with current_pnl from database (updated by background service)
         return [ActiveTradeResponse.model_validate(t) for t in all_trades]
     except Exception as e:
         logger.error(f"Failed to get active trades: {e}")
@@ -346,28 +315,7 @@ async def get_active_trades_for_account(
         
         trades = await db.get_active_trades(account_key)
         
-        # Enrich with live P&L
-        account_manager = get_account_manager()
-        try:
-            account_info = account_manager.get_account(account_key)
-            if account_info and 'client' in account_info:
-                client = account_info['client']
-                positions = await client.get_all_positions()
-                
-                # Map positions to trades by tl_position_id
-                position_map = {
-                    pos.get('positionId') or pos.get('id'): pos 
-                    for pos in positions
-                }
-                
-                for trade in trades:
-                    if trade.tl_position_id and trade.tl_position_id in position_map:
-                        pos = position_map[trade.tl_position_id]
-                        trade.current_pnl = pos.get('unrealizedPl', None)
-        except Exception as e:
-            logger.warning(f"Failed to fetch P&L for account {account_key}: {e}")
-            # Continue without P&L data
-        
+        # Return trades with current_pnl from database (updated by background service)
         return [ActiveTradeResponse.model_validate(t) for t in trades]
     except HTTPException:
         raise

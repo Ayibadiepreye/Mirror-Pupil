@@ -99,6 +99,7 @@ class ActiveTrade(BaseModel):
     status: str  # pending, filled, failed, partially_filled
     tp1_hit: bool = False
     risk_usd: Optional[float] = None
+    current_pnl: Optional[float] = None  # Live unrealized P&L from TradeLocker
 
 
 class WaitingRoom(BaseModel):
