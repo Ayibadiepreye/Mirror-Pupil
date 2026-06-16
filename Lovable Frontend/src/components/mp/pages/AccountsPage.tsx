@@ -265,7 +265,12 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       display_name: a.number,
       initial_balance: a.balance,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.accounts }); toast.success("Account added"); },
+    onSuccess: () => { 
+      qc.invalidateQueries({ queryKey: QK.accounts }); 
+      toast.success("Account added"); 
+      // Remove the added account from discovered list
+      setDiscovered(prev => prev.filter(acc => acc.id !== a.id));
+    },
     onError: () => toast.error("Failed to add account"),
   });
 
@@ -280,7 +285,13 @@ function AddAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
       display_name: manual.display_name || manual.tl_account_id,
       initial_balance: 0, // User will need to sync or manually set this later
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: QK.accounts }); toast.success("Account added"); onOpenChange(false); },
+    onSuccess: () => { 
+      qc.invalidateQueries({ queryKey: QK.accounts }); 
+      toast.success("Account added"); 
+      // Reset form and close dialog
+      setManual({ tl_email: "", tl_password: "", tl_prop_firm: "", tl_server: "", tl_account_id: "", display_name: "" });
+      onOpenChange(false); 
+    },
     onError: () => toast.error("Failed to add account"),
   });
 
