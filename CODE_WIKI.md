@@ -1,56 +1,76 @@
 # Mirror Pupil Code Wiki
 
-## 1. Project Overview
+## 1. Purpose And Scope
 
-Mirror Pupil is a multi-surface copy-trading system built around a Python backend, a React web control panel, and a Flutter mobile client.
+This document describes the current repository as checked in today. It focuses on:
 
-At a high level, the system:
+- overall system architecture
+- responsibilities of major modules
+- key classes and functions
+- dependency relationships
+- practical run, build, and test instructions
 
-1. Ingests Telegram channel messages.
-2. Parses them into structured trading signals or management commands.
-3. Validates them against account-level risk rules.
-4. Executes trades on TradeLocker accounts.
-5. Persists state in PostgreSQL.
-6. Pushes state changes to web and mobile clients through REST, WebSocket, and push notifications.
+Mirror Pupil is a multi-surface copy-trading platform centered on a Python backend. It ingests Telegram trading signals, parses them into structured actions, validates them against risk rules, executes them on TradeLocker accounts, stores state in PostgreSQL, and exposes that state to operator-facing clients through REST and WebSocket APIs.
 
-## 2. Repository Layout
+## 2. High-Level System Summary
+
+At runtime, the system works like this:
+
+1. Telegram messages are received by the TDLib-based Telegram client.
+2. The channel registry selects the correct channel plugin for the source channel.
+3. The plugin parses the raw message into either:
+   - an entry signal
+   - a management command
+   - an incomplete "waiting room" signal that needs follow-up details
+4. The trade executor validates bot state, trading hours, subscriptions, risk, and account eligibility.
+5. Orders and management actions are sent to TradeLocker through per-account clients.
+6. Database records are created or updated for accounts, active trades, history, notifications, and manual actions.
+7. The FastAPI app serves the state to the web UI and pushes live changes through WebSocket updates.
+
+## 3. Repository Layout
 
 ```text
 Mirror Pupil/
 |- backend/
-|  |- api/                  # FastAPI app, REST routes, WebSocket endpoint
-|  |- channels/             # Channel plugin system and channel-specific parsing logic
-|  |- core/                 # Trade execution, account management, monitors, notifications
-|  |- database/             # Models, schema, migrations, async DB manager
-|  |- risk/                 # Risk calculations, limit enforcement, trading-hour controls
-|  |- services/             # Supporting services such as push notifications
-|  \- telegram_integration.py
-|- Lovable Frontend/        # React + TanStack web client
+|  |- api/                    FastAPI entrypoint, REST routes, WebSocket endpoint
+|  |- channels/               Channel plugin framework and channel-specific parsers
+|  |- core/                   Trade execution, account management, monitors, notifications
+|  |- database/               Pydantic models, schema, migrations, DB access manager
+|  |- risk/                   Risk math, validation, trading hours, scheduled protections
+|  |- services/               Auxiliary services such as push notifications
+|  \- telegram_integration.py Telegram runtime bridge into the backend
+|- Lovable Frontend/
 |  |- src/
-|  |  |- routes/            # File-based route entries
-|  |  |- components/        # App shell, pages, shared UI
-|  |  \- lib/               # API client, auth, websocket, utilities, types
-|  \- export/mobile/        # Flutter mobile client
-|- README.md
-|- .env.example
-|- requirements.txt
-|- run_backend.py
-\- CODE_WIKI.md
+|  |  |- routes/              TanStack file-based routes
+|  |  |- components/          App shell, pages, shared UI primitives
+|  |  |- lib/                 API client, auth, websocket, shared utilities and types
+|  |  |- router.tsx           Router factory
+|  |  |- start.ts             TanStack Start bootstrap
+|  |  \- server.ts            SSR/server fetch wrapper
+|  \- export/mobile/          Flutter/mobile export files and documentation
+|- .env.example               Backend environment template
+|- requirements.txt           Backend Python dependencies
+|- run_backend.py             Convenience backend launcher
+|- README.md                  Product and setup overview
+\- CODE_WIKI.md               This document
 ```
 
-## 3. System Architecture
+## 4. Architecture Overview
 
 ```text
 Telegram Channels
     |
     v
-telegram_client.py / backend/telegram_integration.py
+telegram_client.py
+    |
+    v
+backend/telegram_integration.py
     |
     v
 backend/channels/registry.py
     |
     v
-backend/channels/base.py + channel-specific parsers
+backend/channels/base.py + channel-specific parser modules
     |
     v
 backend/core/trade_executor.py
@@ -64,43 +84,42 @@ backend/core/trade_executor.py
     v
 TradeLocker + PostgreSQL
     |
-    +--> FastAPI REST routes
-    +--> WebSocket updates
-    +--> Push notifications
+    +--> backend/api/main.py
+    +--> backend/api/routes/*
+    +--> backend/api/websocket.py
     |
     v
-React Web App / Flutter Mobile App
+Lovable Frontend web app
 ```
 
-## 4. Runtime Composition
+## 5. Backend Composition Root
 
-The main backend composition root is `backend/api/main.py`.
+The main backend entrypoint is `backend/api/main.py`.
 
-During startup it:
+Its `lifespan()` function is the true composition root for the application. On startup it:
 
-1. Loads environment variables.
-2. Connects to PostgreSQL through `DatabaseManager`.
-3. Hydrates `AccountManager` with stored TradeLocker credentials.
-4. Creates and initializes `TradeExecutor`.
-5. Creates the notification service.
-6. Injects the executor into the channel registry.
-7. Starts risk enforcement and background monitors.
-8. Starts Telegram integration.
-9. Mounts REST and WebSocket routes.
+1. creates and connects `DatabaseManager`
+2. loads stored account credentials into `AccountManager`
+3. creates and initializes `TradeExecutor`
+4. creates `NotificationService`
+5. injects the executor into the channel registry
+6. initializes `RiskEnforcer`
+7. starts autonomous channel managers and background monitors
+8. starts Telegram integration
+9. mounts REST and WebSocket routes on the FastAPI app
 
-This makes `backend/api/main.py` the best place to start when tracing backend behavior.
+This is the best single file to read first when tracing backend runtime behavior.
 
-## 5. Backend Architecture
+## 6. Major Backend Modules
 
-### 5.1 API Layer
+### 6.1 `backend/api/`
 
-Location: `backend/api/`
+Responsibilities:
 
-Purpose:
-
-- Exposes REST endpoints for accounts, channels, risk profiles, trades, bot control, notifications, and users.
-- Exposes the WebSocket endpoint used by the frontend and mobile app.
-- Provides the backend process lifecycle through FastAPI lifespan hooks.
+- hosts the FastAPI application
+- defines the process lifecycle
+- exposes REST endpoints for the operator UI
+- exposes the WebSocket endpoint used for real-time updates
 
 Important files:
 
@@ -125,66 +144,63 @@ Mounted route groups:
 - `/api/users`
 - `/ws`
 
-### 5.2 Database Layer
+### 6.2 `backend/database/`
 
-Location: `backend/database/`
+Responsibilities:
 
-Purpose:
-
-- Owns the PostgreSQL connection pool.
-- Initializes schema and default data.
-- Implements most data-access operations for channels, accounts, users, trades, notifications, and settings.
-- Acts as a repository layer for almost the entire backend.
+- defines the core domain models with Pydantic
+- owns the PostgreSQL connection pool
+- initializes schema and applies default data setup
+- provides the persistence API used by nearly every backend subsystem
 
 Important files:
 
-- `backend/database/manager.py`
 - `backend/database/models.py`
+- `backend/database/manager.py`
 - `backend/database/schema.py`
-- `backend/database/migrations/`
+- `backend/database/migrations/add_gui_enhancements.sql`
+- `backend/database/migrations/add_multi_user_auth.sql`
 
-Key design note:
+Design note:
 
-`DatabaseManager` is a major dependency hub. Many backend services call it directly instead of using smaller repositories, so it is central to both persistence and orchestration.
+`DatabaseManager` is a large repository-and-service layer combined into one class. It handles channels, users, accounts, subscriptions, trades, notifications, settings, and manual action audit records, so it is one of the strongest dependency hubs in the whole backend.
 
-### 5.3 Channel Parsing Layer
+### 6.3 `backend/channels/`
 
-Location: `backend/channels/`
+Responsibilities:
 
-Purpose:
-
-- Defines the plugin interface for Telegram signal channels.
-- Loads enabled channel definitions from the database.
-- Routes Telegram messages to the correct parser.
-- Converts raw messages into structured entry or management instructions.
+- defines the plugin contract for Telegram signal channels
+- normalizes raw channel messages into structured trade actions
+- loads enabled channels dynamically from the database
+- routes messages to the correct parser implementation
+- maintains a waiting-room flow for incomplete signals
 
 Important files:
 
 - `backend/channels/base.py`
 - `backend/channels/registry.py`
-- `backend/channels/billirichy/`
-- `backend/channels/firepips/`
+- `backend/channels/billirichy/*`
+- `backend/channels/firepips/*`
 
-Key design note:
+Design note:
 
-The registry loads channels dynamically from database configuration and builds `DynamicChannelPlugin` instances using configured entry and management logic modules.
+The registry does not hard-code one parser per channel record. Instead, a database channel config specifies the entry and management logic modules, and `DynamicChannelPlugin` composes them at runtime.
 
-### 5.4 Trading Core
+### 6.4 `backend/core/`
 
-Location: `backend/core/`
+Responsibilities:
 
-Purpose:
-
-- Manages TradeLocker credentials and account clients.
-- Executes entry signals and management actions.
-- Reconciles balances and positions.
-- Monitors pending orders and trailing stops.
-- Emits user-facing notifications.
+- manages TradeLocker credentials and per-account clients
+- executes entry signals and management actions
+- reconciles balances and positions
+- watches pending orders and trailing-stop conditions
+- emits notifications for user-facing events
+- tracks operational bot state and account health
 
 Important files:
 
-- `backend/core/account_manager.py`
 - `backend/core/trade_executor.py`
+- `backend/core/account_manager.py`
 - `backend/core/tradelocker_client.py`
 - `backend/core/notification_service.py`
 - `backend/core/balance_reconciliation.py`
@@ -195,17 +211,15 @@ Important files:
 - `backend/core/firebase_auth.py`
 - `backend/core/bot_state.py`
 
-### 5.5 Risk Layer
+### 6.5 `backend/risk/`
 
-Location: `backend/risk/`
+Responsibilities:
 
-Purpose:
-
-- Calculates trade risk and account floors.
-- Prevents new trades that would violate account rules.
-- Detects breaches and can trigger protective behavior.
-- Enforces trading-hour constraints.
-- Runs daily reset and end-of-day close schedulers.
+- calculates risk in price and USD terms
+- validates trades before execution
+- enforces daily and overall account rules
+- monitors live breaches in the background
+- controls trading-hours behavior and scheduled resets/closures
 
 Important files:
 
@@ -214,27 +228,23 @@ Important files:
 - `backend/risk/trading_hours.py`
 - `backend/risk/daily_reset.py`
 - `backend/risk/eod_close.py`
+- `backend/risk/consistency.py`
 
-### 5.6 Telegram Integration
+### 6.6 `backend/telegram_integration.py`
 
-Key files:
+Responsibilities:
 
-- `telegram_client.py`
-- `backend/telegram_integration.py`
+- creates and starts the Telegram client if credentials are configured
+- initializes the channel registry using database channel definitions
+- registers message handlers for each enabled channel
+- runs periodic waiting-room cleanup
+- bridges external Telegram events into the backend pipeline
 
-Purpose:
+## 7. Frontend Architecture
 
-- Connects to Telegram using TDLib through `pytdbot`.
-- Subscribes to configured channels.
-- Forwards incoming channel messages into the channel registry.
+The web app lives in `Lovable Frontend/` and is a React 19 application built with TanStack Start, TanStack Router, React Query, axios, Firebase Auth, Vite, Tailwind CSS, and Radix-based UI components.
 
-## 6. Frontend Architecture
-
-Location: `Lovable Frontend/`
-
-The web application is a React 19 app using TanStack Router, TanStack Start, React Query, axios, Firebase Auth, and a Radix/shadcn-style UI stack.
-
-### 6.1 Composition and Bootstrap
+### 7.1 Frontend Bootstrap And Runtime
 
 Important files:
 
@@ -245,311 +255,173 @@ Important files:
 
 Responsibilities:
 
-- `start.ts` boots the TanStack Start app.
-- `server.ts` exports the server fetch handler for the app runtime.
-- `router.tsx` creates the app router from generated routes.
-- `__root.tsx` composes global providers, error boundaries, auth gating, app shell, and toaster notifications.
+- `start.ts` creates the TanStack Start runtime and installs server middleware
+- `server.ts` wraps the generated server entry and normalizes catastrophic SSR failures
+- `router.tsx` creates the query client and router
+- `__root.tsx` composes global providers, app metadata, auth/session gating, approval gating, error handling, and the shared shell
 
-### 6.2 Route Layer
+### 7.2 Frontend Routes
 
-Location: `Lovable Frontend/src/routes/`
+The route layer in `Lovable Frontend/src/routes/` is intentionally thin. Each route mostly maps a URL to a page component:
 
-Responsibilities:
+- `/` -> dashboard
+- `/accounts` -> account management
+- `/trades` -> active trades
+- `/history` -> trade history
+- `/bot-control` -> bot operations
+- `/notifications` -> notifications center
+- `/settings` -> channels, risk profiles, bot settings
+- `/users` -> user administration
+- `/login` -> authentication screen
 
-- Defines URL-to-page mappings.
-- Keeps route files thin by delegating real UI logic to page components.
+### 7.3 Frontend UI Layer
 
-Examples:
+The app-specific UI lives under `Lovable Frontend/src/components/mp/`.
 
-- `index.tsx`
-- `accounts.tsx`
-- `trades.tsx`
-- `notifications.tsx`
-- `settings.tsx`
-- `login.tsx`
-- `users.tsx`
+Key pieces:
 
-### 6.3 Application UI Layer
+- `AppShell.tsx` provides the persistent header, sidebar, mobile radial navigation, bot status, websocket status, unread notification badge, and sign-out
+- `ConfirmDialog.tsx` supplies shared confirmation flow
+- `pages/*` contains the real screen logic for dashboard, accounts, active trades, history, notifications, settings, login, bot control, and users
 
-Location: `Lovable Frontend/src/components/mp/`
+### 7.4 Frontend Integration Layer
 
-Responsibilities:
-
-- Provides the main shell and navigation.
-- Hosts page-level components for dashboard, accounts, trades, notifications, settings, login, and users.
-- Provides shared app-specific components such as confirmation dialogs.
-
-Important files:
-
-- `Lovable Frontend/src/components/mp/AppShell.tsx`
-- `Lovable Frontend/src/components/mp/ConfirmDialog.tsx`
-- `Lovable Frontend/src/components/mp/pages/DashboardPage.tsx`
-- `Lovable Frontend/src/components/mp/pages/AccountsPage.tsx`
-- `Lovable Frontend/src/components/mp/pages/ActiveTradesPage.tsx`
-- `Lovable Frontend/src/components/mp/pages/SettingsPage.tsx`
-- `Lovable Frontend/src/components/mp/pages/LoginPage.tsx`
-- `Lovable Frontend/src/components/mp/pages/UsersPage.tsx`
-
-### 6.4 Data and Integration Layer
-
-Location: `Lovable Frontend/src/lib/mp/`
-
-Responsibilities:
-
-- Encapsulates all REST calls.
-- Manages auth/session state.
-- Manages WebSocket connection and cache invalidation.
-- Defines shared frontend types and optional mock data.
+The frontend service boundary lives under `Lovable Frontend/src/lib/`, especially `src/lib/mp/`.
 
 Important files:
 
 - `Lovable Frontend/src/lib/mp/api.ts`
-- `Lovable Frontend/src/lib/mp/ws.ts`
+- `Lovable Frontend/src/lib/mp/types.ts`
 - `Lovable Frontend/src/lib/mp/auth.ts`
 - `Lovable Frontend/src/lib/mp/auth-context.tsx`
-- `Lovable Frontend/src/lib/mp/types.ts`
+- `Lovable Frontend/src/lib/mp/ws.ts`
 - `Lovable Frontend/src/lib/firebase.ts`
-
-Key design note:
-
-`api.ts` is the main frontend service boundary. Most page components depend on it directly or indirectly.
-
-## 7. Mobile Architecture
-
-Location: `Lovable Frontend/export/mobile/`
-
-The Flutter app mirrors the backend contract used by the web client and provides a mobile-native interface for the same operational workflows.
-
-Important files:
-
-- `Lovable Frontend/export/mobile/lib/main.dart`
-- `Lovable Frontend/export/mobile/lib/api/api_client.dart`
-- `Lovable Frontend/export/mobile/lib/api/ws_service.dart`
-- `Lovable Frontend/export/mobile/lib/auth/auth_service.dart`
-- `Lovable Frontend/export/mobile/lib/services/fcm_service.dart`
-- `Lovable Frontend/export/mobile/lib/screens/`
 
 Responsibilities:
 
-- Bootstraps Firebase, auth, API client, WebSocket client, and router.
-- Reuses the same backend endpoints and WebSocket channel as the web client.
-- Adds mobile-specific behavior such as FCM push notification registration.
+- `api.ts` centralizes REST calls, auth token attachment, mock-mode behavior, and React Query keys
+- `types.ts` mirrors the backend data contract in TypeScript
+- `auth-context.tsx` listens to Firebase auth state and enriches it using `/api/users/me`
+- `ws.ts` manages websocket reconnection and query invalidation
 
-## 8. Major Modules and Responsibilities
+## 8. Mobile Export Status
 
-| Module | Responsibility | Key Dependencies |
+The repository contains `Lovable Frontend/export/mobile/`, but the current checkout appears to be an export/scaffolding package rather than a complete in-repo mobile source tree.
+
+What is present:
+
+- Android wrapper files
+- Flutter metadata and configuration
+- mobile README and setup docs
+- a widget test
+
+What is not present in this checkout:
+
+- the `lib/` Dart source files referenced by `export/mobile/README.md`
+
+Implication:
+
+Treat the mobile portion of this repository as documentation and export scaffolding unless the missing Dart source files are restored in a future commit.
+
+## 9. Core Domain Models
+
+The backend models in `backend/database/models.py` define the core data contract.
+
+| Model | Purpose |
+| --- | --- |
+| `Channel` | Configures a Telegram source channel, parser modules, prefix, priority, and enabled state |
+| `RiskProfile` | Stores named account risk rules such as max risk, daily loss, trailing logic, and buffers |
+| `Account` | Represents a TradeLocker sub-account plus owner, balance, drawdown, and operational state |
+| `ChannelSubscription` | Connects an account to a channel with an enabled flag |
+| `ActiveTrade` | Represents an open or pending trade being tracked live |
+| `WaitingRoom` | Stores incomplete entry signals awaiting completion details |
+| `TradeHistory` | Stores closed-trade history including PnL and close reason |
+| `ProfitableDay` | Tracks consistency-related daily performance |
+| `MessageCache` | Deduplicates processed Telegram messages |
+| `Notification` | Represents a UI-visible event delivered via API/WebSocket |
+| `ManualAction` | Audits user-triggered manual operations |
+
+## 10. Key Classes And Functions
+
+### 10.1 Backend Runtime And Orchestration
+
+| Symbol | Location | Role |
 | --- | --- | --- |
-| `backend/api/main.py` | Process composition root, startup/shutdown lifecycle, router mounting | `DatabaseManager`, `TradeExecutor`, monitors, Telegram integration |
-| `backend/database/manager.py` | Database pool, schema init, application data access | `asyncpg`, schema/models, secret vault |
-| `backend/channels/registry.py` | Loads enabled channel plugins and routes Telegram messages | `DatabaseManager`, channel plugins, `TradeExecutor` |
-| `backend/channels/base.py` | Shared plugin contract and generic routing logic | Channel-specific parser modules, `TradeExecutor` |
-| `backend/core/account_manager.py` | Discovers and manages TradeLocker sub-accounts and clients | `TradeLockerClient` |
-| `backend/core/trade_executor.py` | Executes signals, management actions, and trade lifecycle operations | `AccountManager`, `RiskEnforcer`, `DatabaseManager`, notifications |
-| `backend/core/tradelocker_client.py` | Broker API wrapper with auth, retries, and trading operations | TradeLocker SDK |
-| `backend/risk/enforcer.py` | Pre-trade validation and breach monitoring | `RiskCalculator`, `DatabaseManager`, notifications |
-| `backend/core/notification_service.py` | Persists and broadcasts notifications | `DatabaseManager`, WebSocket manager |
-| `Lovable Frontend/src/routes/__root.tsx` | Global provider composition and auth gate | React Query, auth context, app shell |
-| `Lovable Frontend/src/lib/mp/api.ts` | Browser API client and query-key hub | axios, session storage |
-| `Lovable Frontend/src/lib/mp/ws.ts` | Real-time sync and cache invalidation | browser WebSocket, React Query |
-| `Lovable Frontend/src/components/mp/AppShell.tsx` | Shared web navigation and runtime status UI | route state, bot status, notifications, websocket status |
-| `Lovable Frontend/export/mobile/lib/api/api_client.dart` | Mobile API service layer | HTTP, auth token handling |
-| `Lovable Frontend/export/mobile/lib/api/ws_service.dart` | Mobile WebSocket wrapper | WebSocket channel |
-
-## 9. Key Classes and Functions
-
-### 9.1 Backend Core
-
-#### `DatabaseManager`
-
-Location: `backend/database/manager.py`
-
-Role:
-
-- Creates the async PostgreSQL pool.
-- Initializes and migrates schema.
-- Provides CRUD/query helpers across almost every domain table.
-
-Important methods:
-
-- `connect()`
-- `disconnect()`
-- `initialize_schema()`
-- `get_all_channels()`
-- `get_risk_profiles_by_user()`
-- `get_all_accounts()`
-- `get_active_trades()`
-- notification and user-management helpers used by API routes and services
-
-#### `TradeExecutor`
-
-Location: `backend/core/trade_executor.py`
-
-Role:
-
-- Main orchestration class for trading actions.
-- Executes entry signals across subscribed accounts.
-- Executes management commands such as breakeven, partial close, and close-all behavior.
-
-Important methods:
-
-- `initialize()`
-- `execute_signal()`
-- `_execute_on_account_with_limit_check()`
-- `_execute_on_account()`
-- `execute_management()`
-
-#### `AccountManager`
-
-Location: `backend/core/account_manager.py`
-
-Role:
-
-- Discovers TradeLocker sub-accounts for a credential.
-- Maintains one client per sub-account.
-- Exposes live account/runtime broker access to the rest of the backend.
-
-Important methods:
-
-- `add_credential()`
-- `get_account()`
-- `get_client_for_account()`
-- `get_all_accounts()`
-- `update_account_balance()`
-- `get_open_positions()`
-- `close_all_positions()`
-
-#### `RiskEnforcer`
-
-Location: `backend/risk/enforcer.py`
-
-Role:
-
-- Validates proposed trades before execution.
-- Monitors accounts for breaches in the background.
-- Applies daily, overall, and concurrent trade restrictions.
-
-Important methods:
-
-- `start_breach_monitoring()`
-- `stop_breach_monitoring()`
-- `validate_trade()`
-- `check_risk_limits()`
-
-#### `NotificationService`
-
-Location: `backend/core/notification_service.py`
-
-Role:
-
-- Creates notification records.
-- Broadcasts user-visible events through WebSocket.
-- Acts as the bridge between backend events and real-time UI updates.
-
-### 9.2 Channel Abstractions
-
-#### `ParsedSignal`
-
-Location: `backend/channels/base.py`
-
-Role:
-
-- Structured output for a parsed entry signal.
-- Captures normalized symbol, direction, prices, order type, and message metadata.
-
-#### `ParsedManagement`
-
-Location: `backend/channels/base.py`
-
-Role:
-
-- Structured output for a parsed management command.
-- Captures actions such as breakeven, stop-loss changes, take-profit changes, or partial close instructions.
-
-#### `ChannelPlugin`
-
-Location: `backend/channels/base.py`
-
-Role:
-
-- Abstract parser interface for all Telegram channels.
-- Defines symbol normalization, entry parsing, management parsing, and generic message routing behavior.
-
-#### `DynamicChannelPlugin`
-
-Location: `backend/channels/base.py`
-
-Role:
-
-- Runtime-configurable plugin implementation.
-- Loads entry and management logic modules based on database channel configuration.
-
-#### `ChannelRegistry`
-
-Location: `backend/channels/registry.py`
-
-Role:
-
-- Registry and dispatcher for channel plugins.
-- Connects Telegram channel IDs to parser/execution logic.
-
-Important methods:
-
-- `initialize()`
-- `inject_trade_executor()`
-- `get_plugin()`
-- `route_message()`
-
-### 9.3 Frontend Key Functions and Components
-
-#### `Route` in `src/routes/__root.tsx`
-
-Role:
-
-- Defines the root route tree configuration.
-- Applies provider composition, error handling, and the authentication gate.
-
-#### `AppShell`
-
-Location: `Lovable Frontend/src/components/mp/AppShell.tsx`
-
-Role:
-
-- Provides the persistent UI shell, navigation, and runtime indicators used by authenticated screens.
-
-#### `accountsApi`, `channelsApi`, `riskProfilesApi`, `tradesApi`, `notificationsApi`, `botApi`, `usersApi`
-
-Location: `Lovable Frontend/src/lib/mp/api.ts`
-
-Role:
-
-- Group REST operations by domain.
-- Provide one consistent browser-side API layer across the app.
-
-#### `useMirrorPupilWebSocket()`
-
-Location: `Lovable Frontend/src/lib/mp/ws.ts`
-
-Role:
-
-- Opens the live WebSocket connection.
-- Invalidates cached queries when trade, balance, or notification messages arrive.
-- Falls back gracefully when the connection drops.
-
-#### `AuthProvider`
-
-Location: `Lovable Frontend/src/lib/mp/auth-context.tsx`
-
-Role:
-
-- Tracks Firebase auth state.
-- Fetches approval and admin metadata from the backend.
-
-## 10. Dependency Relationships
-
-### 10.1 Backend
+| `lifespan()` | `backend/api/main.py` | Composes and starts the backend on FastAPI startup, then shuts it down cleanly |
+| `TelegramIntegration.start()` | `backend/telegram_integration.py` | Starts the Telegram client, initializes the channel registry, and registers handlers |
+| `ChannelRegistry.initialize()` | `backend/channels/registry.py` | Loads enabled channel definitions from the database and builds plugins |
+| `ChannelRegistry.route_message()` | `backend/channels/registry.py` | Dispatches a Telegram message to the correct plugin |
+| `ChannelPlugin.route_message()` | `backend/channels/base.py` | Default parser routing pipeline for edits, replies, management, waiting-room completion, and entries |
+
+### 10.2 Trading Core
+
+| Symbol | Location | Role |
+| --- | --- | --- |
+| `TradeExecutor.initialize()` | `backend/core/trade_executor.py` | Lazy-initializes risk enforcement and notification services |
+| `TradeExecutor.execute_signal()` | `backend/core/trade_executor.py` | Entry-point for executing a parsed signal across eligible accounts |
+| `TradeExecutor._execute_on_account()` | `backend/core/trade_executor.py` | Performs the actual per-account order workflow: instrument resolution, sizing, placement, persistence |
+| `TradeExecutor.execute_management()` | `backend/core/trade_executor.py` | Applies parsed management instructions across matching trades/accounts |
+| `TradeExecutor._apply_management_action()` | `backend/core/trade_executor.py` | Executes the specific close, BE, TP/SL update, cancel, or partial action |
+| `TradeExecutor.execute_manual_close()` | `backend/core/trade_executor.py` | Performs a user-triggered manual close |
+| `TradeExecutor.execute_manual_breakeven()` | `backend/core/trade_executor.py` | Performs a user-triggered move-to-breakeven |
+| `TradeExecutor.execute_manual_partial()` | `backend/core/trade_executor.py` | Performs a user-triggered partial close |
+| `AccountManager.add_credential()` | `backend/core/account_manager.py` | Discovers sub-accounts and creates a dedicated TradeLocker client for each |
+| `AccountManager.get_client_for_account()` | `backend/core/account_manager.py` | Returns the runtime broker client for a specific account |
+
+### 10.3 Risk And Protection
+
+| Symbol | Location | Role |
+| --- | --- | --- |
+| `RiskEnforcer.start_breach_monitoring()` | `backend/risk/enforcer.py` | Starts the periodic background breach-check loop |
+| `RiskEnforcer.validate_trade()` | `backend/risk/enforcer.py` | Verifies concurrent-trade, combined-risk, daily-room, and overall-room constraints |
+| `RiskEnforcer.check_risk_limits()` | `backend/risk/enforcer.py` | Detects breaches and triggers protective follow-up |
+
+### 10.4 Persistence And Realtime
+
+| Symbol | Location | Role |
+| --- | --- | --- |
+| `DatabaseManager.connect()` | `backend/database/manager.py` | Opens the async PostgreSQL pool and initializes schema state |
+| `DatabaseManager.get_all_accounts()` | `backend/database/manager.py` | Returns configured accounts for startup and UI flows |
+| `DatabaseManager.is_channel_subscribed()` | `backend/database/manager.py` | Filters signal execution targets by subscription |
+| `DatabaseManager.add_active_trade()` | `backend/database/manager.py` | Persists newly opened trades |
+| `DatabaseManager.close_active_trade()` | `backend/database/manager.py` | Closes live trades and updates state |
+| `DatabaseManager.get_trade_history()` | `backend/database/manager.py` | Provides trade-history data for the UI |
+| `DatabaseManager.add_notification()` | `backend/database/manager.py` | Persists notification records |
+
+### 10.5 Frontend Runtime
+
+| Symbol | Location | Role |
+| --- | --- | --- |
+| `Route` | `Lovable Frontend/src/routes/__root.tsx` | Root route that defines metadata, providers, shell usage, and error/404 handling |
+| `AuthProvider` | `Lovable Frontend/src/lib/mp/auth-context.tsx` | Tracks Firebase auth and backend approval/super-admin state |
+| `useMirrorPupilWebSocket()` | `Lovable Frontend/src/lib/mp/ws.ts` | Connects to `/ws/updates` and invalidates React Query caches on live events |
+| `AppShell` | `Lovable Frontend/src/components/mp/AppShell.tsx` | Shared operator shell with nav, status badges, and notifications entry point |
+| `accountsApi`, `channelsApi`, `riskProfilesApi`, `tradesApi`, `notificationsApi`, `botApi`, `usersApi` | `Lovable Frontend/src/lib/mp/api.ts` | Typed frontend service boundary for backend routes |
+
+## 11. Major Module Responsibilities
+
+| Module | Responsibility | Main Dependencies |
+| --- | --- | --- |
+| `backend/api/main.py` | Composes the whole backend process | `DatabaseManager`, `TradeExecutor`, `RiskEnforcer`, monitors, `TelegramIntegration` |
+| `backend/channels/registry.py` | Loads configured channel plugins and routes messages | `DatabaseManager`, `DynamicChannelPlugin`, `TradeExecutor` |
+| `backend/channels/base.py` | Defines parser models and default routing behavior | channel-specific entry and management modules |
+| `backend/core/trade_executor.py` | Orchestrates execution and management actions | `AccountManager`, `RiskEnforcer`, `DatabaseManager`, notification service |
+| `backend/core/account_manager.py` | Maintains per-account broker clients | `TradeLockerClient` |
+| `backend/core/tradelocker_client.py` | Wraps TradeLocker operations | TradeLocker SDK |
+| `backend/risk/enforcer.py` | Enforces pre-trade and runtime risk rules | `RiskCalculator`, `DatabaseManager`, notification service |
+| `backend/database/manager.py` | Data access for nearly all domains | `asyncpg`, schema, Pydantic models |
+| `backend/telegram_integration.py` | Bridges Telegram into backend execution | `HumanLikeTelegramClient`, `ChannelRegistry` |
+| `Lovable Frontend/src/routes/__root.tsx` | Global app composition and access gating | React Query, auth context, app shell |
+| `Lovable Frontend/src/lib/mp/api.ts` | REST client, auth headers, mock layer, query keys | axios, browser session state |
+| `Lovable Frontend/src/lib/mp/ws.ts` | Realtime connection and cache invalidation | browser WebSocket, React Query, notifications |
+| `Lovable Frontend/src/components/mp/AppShell.tsx` | Shared authenticated layout | route state, bot API, notifications API, websocket hook |
+
+## 12. Dependency Relationships
+
+### 12.1 Backend Dependency Graph
 
 ```text
-FastAPI main
+FastAPI app
   -> DatabaseManager
   -> AccountManager
   -> TradeExecutor
@@ -562,77 +434,89 @@ FastAPI main
      -> DynamicChannelPlugin
      -> TradeExecutor
   -> TelegramIntegration
+     -> HumanLikeTelegramClient
      -> ChannelRegistry
   -> Background monitors
      -> DatabaseManager
      -> AccountManager / TradeExecutor / NotificationService
 ```
 
-### 10.2 Web Client
+### 12.2 Frontend Dependency Graph
 
 ```text
-TanStack route/page
-  -> React Query hooks/mutations
-  -> api.ts domain clients
-  -> FastAPI REST endpoints
+TanStack route
+  -> page component
+  -> React Query
+  -> api.ts domain client
+  -> FastAPI REST endpoint
 
-WebSocket hook
+AppShell
+  -> botApi.status()
+  -> notificationsApi.list()
+  -> useMirrorPupilWebSocket()
+
+useMirrorPupilWebSocket()
   -> /ws/updates
   -> React Query cache invalidation
   -> toast notifications
 ```
 
-### 10.3 Mobile Client
+### 12.3 Auth Relationship
 
 ```text
-Screen widgets
-  -> api_client.dart
-  -> FastAPI REST endpoints
-
-ws_service.dart
-  -> /ws/updates
-
-auth_service.dart
-  -> Firebase Auth
-  -> backend user endpoints
+Firebase Auth
+  -> frontend auth-context
+  -> token stored in session
+  -> axios Authorization header
+  -> backend /api/users/me and protected routes
+  -> approval and super-admin state
 ```
 
-## 11. End-to-End Data Flow
+## 13. End-To-End Runtime Flows
 
-### 11.1 Signal Execution Flow
+### 13.1 Signal Execution Flow
 
-1. A Telegram signal arrives.
-2. `backend/telegram_integration.py` forwards it to `ChannelRegistry`.
-3. The matching channel plugin parses it into `ParsedSignal`.
-4. The plugin hands execution to `TradeExecutor`.
-5. `TradeExecutor` checks bot state and trading hours.
-6. `RiskEnforcer` validates the trade for each target account.
-7. `AccountManager` provides the correct TradeLocker client.
-8. `TradeLockerClient` places the order.
-9. `DatabaseManager` records the active trade and related state.
-10. `NotificationService` emits updates.
-11. Web and mobile clients refresh via REST polling and WebSocket invalidation.
+1. A Telegram signal message arrives.
+2. `telegram_client.py` receives it through TDLib.
+3. `TelegramIntegration` passes it to `ChannelRegistry`.
+4. The matching plugin parses it into `ParsedSignal`, `ParsedManagement`, or waiting-room state.
+5. `TradeExecutor.execute_signal()` checks bot state and trading hours.
+6. Subscribed, unpaused, non-breached accounts are selected.
+7. `RiskEnforcer.validate_trade()` validates per-account safety.
+8. `AccountManager` provides the correct TradeLocker client.
+9. `TradeLockerClient` places the order.
+10. `DatabaseManager` persists active-trade state and related changes.
+11. `NotificationService` emits notifications.
+12. Web clients update through REST polling plus websocket invalidation.
 
-### 11.2 Trade Management Flow
+### 13.2 Management Flow
 
-1. A management message arrives from Telegram or a user action arrives from the UI.
-2. The backend resolves the target active trade or trade set.
-3. `TradeExecutor` performs the requested action.
-4. Database state and notifications are updated.
-5. Clients observe the change through the same real-time channel.
+1. A Telegram management message or UI manual action targets an existing trade.
+2. The backend resolves the affected trade(s) and account(s).
+3. `TradeExecutor.execute_management()` or a manual execution helper applies the action.
+4. Database state is updated.
+5. Notifications and websocket events push the result to clients.
 
-## 12. How To Run The Project
+### 13.3 Frontend Data Flow
 
-### 12.1 Prerequisites
+1. Page components call domain APIs from `src/lib/mp/api.ts`.
+2. The axios client attaches the stored auth token.
+3. Responses populate React Query caches.
+4. `useMirrorPupilWebSocket()` invalidates affected caches when live backend events arrive.
+5. The UI re-renders from fresh query data.
+
+## 14. Running The Project
+
+### 14.1 Prerequisites
 
 - Python 3.11+
-- Node.js 18+
-- PostgreSQL database
+- Node.js 18+ or newer
+- PostgreSQL
 - Telegram API credentials
 - TradeLocker credentials
-- Firebase project credentials if auth and mobile push features are needed
+- Firebase project credentials if auth is enabled
 
-### 12.2 Backend Setup
+### 14.2 Backend Setup
 
 From the repository root:
 
@@ -640,23 +524,29 @@ From the repository root:
 pip install -r requirements.txt
 ```
 
-Copy the environment template:
+Create `.env` from the template:
 
 ```bash
 cp .env.example .env
 ```
 
-Important environment values include:
+Important backend environment variables:
 
 - `TELEGRAM_API_ID`
 - `TELEGRAM_API_HASH`
 - `TELEGRAM_PHONE`
+- `TDLIB_ENCRYPTION_KEY`
 - `DATABASE_URL`
 - `DRY_RUN`
 - `DEFAULT_LOT_SIZE`
+- `API_HOST`
+- `API_PORT`
 - `FIREBASE_SERVICE_ACCOUNT_KEY`
+- `AUTH_DISABLED`
+- `SUPER_ADMIN_EMAIL`
+- `ENCRYPTION_KEY`
 
-Start the backend with either command:
+Start the backend with either:
 
 ```bash
 uvicorn backend.api.main:app --reload --port 8000
@@ -670,11 +560,11 @@ python run_backend.py
 
 Useful URLs:
 
-- API root: `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
+- `http://localhost:8000/`
+- `http://localhost:8000/health`
+- `http://localhost:8000/docs`
 
-### 12.3 Frontend Setup
+### 14.3 Frontend Setup
 
 The actual frontend directory in this repository is `Lovable Frontend/`.
 
@@ -684,7 +574,13 @@ npm install
 npm run dev
 ```
 
-Other useful commands:
+Frontend environment variables come from `Lovable Frontend/.env.example`:
+
+- `VITE_API_URL`
+- `VITE_WS_URL`
+- `VITE_USE_MOCK`
+
+Common frontend commands:
 
 ```bash
 npm run build
@@ -693,16 +589,14 @@ npm run lint
 npm run format
 ```
 
-Default backend connection values in the frontend are:
+Notes:
 
-- API: `http://localhost:8000`
-- WebSocket: `ws://localhost:8000`
+- `VITE_USE_MOCK=true` makes the UI use in-memory mock data instead of the real backend
+- default local endpoints are `http://localhost:8000` and `ws://localhost:8000`
 
-These can be overridden with frontend environment variables such as `VITE_API_URL`, `VITE_WS_URL`, and `VITE_USE_MOCK`.
+### 14.4 Mobile Export Setup
 
-### 12.4 Mobile Setup
-
-From the mobile export directory:
+If you are working with the exported mobile package:
 
 ```bash
 cd "Lovable Frontend/export/mobile"
@@ -710,72 +604,108 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://localhost:8000 --dart-define=WS_BASE_URL=ws://localhost:8000
 ```
 
-For remote deployments, replace those `dart-define` values with your hosted API and WebSocket URLs.
+Use this cautiously: the current checkout contains mobile export/config files, but not the `lib/` Dart sources described in the mobile README.
 
-## 13. External Dependencies
+## 15. Build, Test, And Validation
 
-### 13.1 Backend
+### 15.1 Backend Tests
+
+The repository contains root-level Python test files such as:
+
+- `test_auth_setup.py`
+- `test_comprehensive_system.py`
+- `test_database.py`
+- `test_parsers.py`
+- `test_risk.py`
+- `test_tradelocker.py`
+
+Run them from the repository root:
+
+```bash
+pytest
+```
+
+Important caution:
+
+Some tests appear integration-oriented and may require real services, valid credentials, database access, or live TradeLocker connectivity. `test_comprehensive_system.py` is clearly a live system validation script, not a lightweight unit test.
+
+### 15.2 Frontend Validation
+
+```bash
+cd "Lovable Frontend"
+npm run lint
+npm run build
+```
+
+### 15.3 Docker
+
+No `Dockerfile`, `docker-compose.yml`, `compose.yaml`, or related Docker setup was found in the current repository.
+
+## 16. External Dependencies
+
+### 16.1 Backend
 
 Notable Python dependencies from `requirements.txt`:
 
 - `pytdbot[tdjson]`
 - `tradelocker`
 - `asyncpg`
+- `psycopg2-binary`
 - `sqlalchemy`
 - `fastapi`
 - `uvicorn[standard]`
 - `websockets`
-- `firebase-admin`
+- `aiohttp`
+- `httpx`
+- `python-dotenv`
+- `pydantic`
+- `cryptography`
+- `loguru`
 - `pandas`
+- `pytest`
+- `pytest-asyncio`
 
-### 13.2 Frontend
+### 16.2 Frontend
 
 Notable web dependencies from `Lovable Frontend/package.json`:
 
 - `react`
+- `react-dom`
 - `@tanstack/react-query`
 - `@tanstack/react-router`
 - `@tanstack/react-start`
 - `axios`
 - `firebase`
+- `tailwindcss`
+- `@tailwindcss/vite`
+- `@radix-ui/*`
 - `zod`
-- `sonner`
-- `lucide-react`
-- many `@radix-ui/*` packages
+- `vite`
+- `typescript`
 
-### 13.3 Mobile
+## 17. Notable Repository Observations
 
-Notable Flutter dependencies from `Lovable Frontend/export/mobile/pubspec.yaml`:
+- The root `README.md` still uses `frontend/` in some examples, but the actual directory name in this checkout is `Lovable Frontend/`.
+- The existing web app is current and fully represented in source.
+- The mobile export README describes a richer Flutter source tree than is currently present in the repository.
+- `DatabaseManager` is intentionally broad and central, which simplifies orchestration but increases coupling.
+- Real-time updates are additive rather than standalone: the frontend still depends on regular API fetches, with WebSocket events mostly used to invalidate cached queries.
 
-- `http`
-- `web_socket_channel`
-- `go_router`
-- `shared_preferences`
-- `firebase_core`
-- `firebase_auth`
-- `firebase_messaging`
-- `google_sign_in`
-- `flutter_svg`
+## 18. Where To Start Reading
 
-## 14. Suggested Reading Order
+If you are onboarding to the codebase, this order gives the fastest architectural understanding:
 
-For new contributors, a good reading path is:
-
-1. `README.md`
-2. `backend/api/main.py`
+1. `backend/api/main.py`
+2. `backend/telegram_integration.py`
 3. `backend/channels/base.py`
 4. `backend/channels/registry.py`
 5. `backend/core/trade_executor.py`
-6. `backend/risk/enforcer.py`
+6. `backend/database/models.py`
 7. `backend/database/manager.py`
-8. `Lovable Frontend/src/routes/__root.tsx`
-9. `Lovable Frontend/src/lib/mp/api.ts`
-10. `Lovable Frontend/src/components/mp/AppShell.tsx`
+8. `backend/risk/enforcer.py`
+9. `Lovable Frontend/src/routes/__root.tsx`
+10. `Lovable Frontend/src/lib/mp/api.ts`
+11. `Lovable Frontend/src/lib/mp/ws.ts`
+12. `Lovable Frontend/src/components/mp/AppShell.tsx`
 
-## 15. Architectural Observations
-
-- The backend is intentionally centralized around a few heavy orchestrators: `DatabaseManager`, `TradeExecutor`, and `ChannelRegistry`.
-- The parser/execution split is clean: channel plugins parse, while the trading core executes.
-- The frontend and mobile apps both depend on the same backend contract, which keeps feature parity straightforward.
-- Real-time UX is implemented as a hybrid model: REST remains the source for most screen data, while WebSocket events trigger refreshes and notifications.
-- The repository contains multiple operational surfaces, but the FastAPI backend is the true system center.
+This path follows the real runtime flow from external signal ingestion to execution, persistence, and operator UI.
