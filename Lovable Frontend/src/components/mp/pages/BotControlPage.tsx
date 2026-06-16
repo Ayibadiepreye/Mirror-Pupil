@@ -1,6 +1,4 @@
-import { useQuery, useQueryClient, useMutation } from "@tantml:function_calls>
-<invoke name="str_replace">
-<parameter name="newStr">import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Bot, PauseCircle, PlayCircle, RotateCw, ShieldOff,
 } from "lucide-react";
