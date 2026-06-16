@@ -179,7 +179,7 @@ export function ActiveTradesPage() {
                     <Stat label="SL" value={t.sl != null ? formatPrice(t.sl, t.symbol) : "—"} />
                     <Stat label="TP" value={t.tp != null ? formatPrice(t.tp, t.symbol) : "—"} />
                     <Stat label="Lots" value={t.lot_size.toFixed(2)} />
-                    <Stat label="Risk" value={t.risk_usd != null ? formatCurrency(t.risk_usd) : "—"} />
+                    <Stat label="Risk" value={t.risk_usd != null ? formatCurrency(-t.risk_usd) : "—"} />
                     <Stat 
                       label="P&L" 
                       value={t.current_pnl != null ? formatCurrency(t.current_pnl) : "—"} 
