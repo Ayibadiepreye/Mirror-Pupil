@@ -38,10 +38,21 @@ class NotificationResponse(BaseModel):
     message: str
     metadata: Optional[dict]
     read: bool
-    created_at: datetime
+    created_at: str  # Changed to str for JSON serialization
     
     class Config:
         from_attributes = True
+    
+    @classmethod
+    def from_db(cls, notification_dict: dict):
+        """Create NotificationResponse from database dict, handling datetime conversion."""
+        if notification_dict and 'created_at' in notification_dict:
+            created_at = notification_dict['created_at']
+            if hasattr(created_at, 'isoformat'):
+                notification_dict['created_at'] = created_at.isoformat()
+            elif not isinstance(created_at, str):
+                notification_dict['created_at'] = str(created_at)
+        return cls(**notification_dict)
 
 
 @router.get("/", response_model=List[NotificationResponse])
@@ -85,7 +96,7 @@ async def get_all_notifications(
             unread_only=unread_only,
             limit=limit
         )
-        return [NotificationResponse(**n) for n in notifications]
+        return [NotificationResponse.from_db(n) for n in notifications]
     except HTTPException:
         raise
     except Exception as e:
@@ -152,7 +163,7 @@ async def create_notification(
                 }
             )
         
-        return NotificationResponse(**notification)
+        return NotificationResponse.from_db(notification)
         
     except HTTPException:
         raise
@@ -208,7 +219,7 @@ async def mark_notification_read(
             )
         
         notification = await db.get_notification(notification_id)
-        return NotificationResponse(**notification)
+        return NotificationResponse.from_db(notification)
         
     except HTTPException:
         raise

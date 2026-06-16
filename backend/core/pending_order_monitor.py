@@ -180,6 +180,20 @@ class PendingOrderMonitor:
         
         logger.info(f"[{trade.account_key}] ✅ Trade {trade.trade_id} updated to FILLED")
         
+        # Send notification for pending order filled
+        notification_service = self._get_notification_service()
+        if notification_service:
+            channel = await self.db.get_channel(trade.channel_id)
+            channel_name = channel.display_name if channel else f"Channel {trade.channel_id}"
+            await notification_service.trade_executed(
+                account_key=trade.account_key,
+                symbol=trade.symbol,
+                direction=trade.direction,
+                lot_size=filled_qty,
+                entry_price=fill_price,
+                channel_name=channel_name
+            )
+        
         # CRITICAL: Resolve position_id now that order is filled
         # This matches the logic in trade_executor.py for market orders
         if not trade.tl_position_id and trade.tl_order_id:

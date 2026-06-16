@@ -336,6 +336,17 @@ class TradeExecutor:
         if not account_db:
             raise Exception(f"Account not found in database: {account_key}")
         
+        # Send signal received notification
+        if self.notification_service:
+            channel = await self.db.get_channel(channel_id)
+            channel_name = channel.display_name if channel else f"Channel {channel_id}"
+            await self.notification_service.signal_received(
+                channel_name=channel_name,
+                symbol=signal.symbol,
+                direction=signal.direction,
+                account_key=account_key
+            )
+        
         # Get account from AccountManager (for TradeLocker client)
         account = self.account_manager.get_account(account_key)
         if not account:
@@ -547,12 +558,16 @@ class TradeExecutor:
                     except:
                         pass
                 
-                if status == "filled" and fill_price == 0.0 and position_id:
+                # Always fetch actual entry price from position after execution
+                if status == "filled" and position_id:
                     try:
                         all_positions = await client.get_all_positions()
                         position_info = next((p for p in all_positions if p.get('id') == position_id), None)
                         if position_info:
-                            fill_price = float(position_info.get('openPrice', 0.0))
+                            # Use avgPrice from position as the actual entry price
+                            actual_entry = position_info.get('avgPrice') or position_info.get('openPrice')
+                            if actual_entry:
+                                fill_price = float(actual_entry)
                     except:
                         pass
                 
