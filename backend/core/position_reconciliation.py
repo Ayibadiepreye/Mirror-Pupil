@@ -171,10 +171,6 @@ class PositionReconciliationMonitor:
             # Note: TradeLocker may provide recent executions or trade history
             # We'll try to fetch it, but this may not always be available
             
-            # Get current market price as fallback for exit price
-            market_price = await client.get_market_price(trade.symbol)
-            exit_price = market_price if market_price else trade.entry_price
-            
             # Try to get PnL from TradeLocker's recent executions or account history
             # This is best-effort - if unavailable, we'll calculate manually below
             try:
@@ -193,43 +189,75 @@ class PositionReconciliationMonitor:
             except Exception as e:
                 logger.debug(f"[{account_key}] Could not fetch executions: {e}")
             
-            # Determine close reason based on exit price proximity to TP/SL
-            if trade.tp and abs(exit_price - trade.tp) < 0.01:  # Within 1 pip
-                close_reason = "TP_HIT"
-                logger.info(f"[{account_key}] Detected TP hit for {trade.symbol}")
-            elif trade.sl and abs(exit_price - trade.sl) < 0.01:  # Within 1 pip
-                close_reason = "SL_HIT"
-                logger.info(f"[{account_key}] Detected SL hit for {trade.symbol}")
-            else:
+            # Determine exit price and close reason
+            # Priority 1: Use TP/SL prices if they were set (most accurate for TP/SL hits)
+            # Priority 2: Get current market price as fallback
+            market_price = await client.get_market_price(trade.symbol)
+            
+            # Check proximity to TP or SL to determine exit price
+            if trade.tp and market_price:
+                # Calculate pip distance to TP
+                pip_distance_to_tp = abs(market_price - trade.tp)
+                # If within 5 pips (0.05 for most pairs, 5.0 for JPY pairs), assume TP hit
+                tolerance = 5.0 if 'JPY' in trade.symbol else 0.05
+                
+                if pip_distance_to_tp <= tolerance:
+                    close_reason = "TP_HIT"
+                    exit_price = trade.tp  # Use TP as exact exit price
+                    logger.info(f"[{account_key}] Detected TP hit for {trade.symbol} - using TP price {exit_price}")
+            
+            if exit_price is None and trade.sl and market_price:
+                # Calculate pip distance to SL
+                pip_distance_to_sl = abs(market_price - trade.sl)
+                tolerance = 5.0 if 'JPY' in trade.symbol else 0.05
+                
+                if pip_distance_to_sl <= tolerance:
+                    close_reason = "SL_HIT"
+                    exit_price = trade.sl  # Use SL as exact exit price
+                    logger.info(f"[{account_key}] Detected SL hit for {trade.symbol} - using SL price {exit_price}")
+            
+            # Fallback: Use current market price if neither TP nor SL matched
+            if exit_price is None:
+                exit_price = market_price if market_price else trade.entry_price
                 close_reason = "EXTERNAL"
-                logger.info(f"[{account_key}] Position closed externally for {trade.symbol}")
+                logger.info(f"[{account_key}] Position closed externally for {trade.symbol} - using market price {exit_price}")
             
         except Exception as e:
-            logger.error(f"Failed to get exit price for {trade.symbol}: {e}")
-            exit_price = trade.entry_price  # Fallback
+            logger.error(f"Failed to determine exit price for {trade.symbol}: {e}")
+            exit_price = trade.entry_price  # Ultimate fallback
         
         # FALLBACK: Calculate P&L manually if not available from TradeLocker
         if pnl is None:
-            logger.warning(f"[{account_key}] PnL not available from TradeLocker, calculating manually")
+            logger.warning(f"[{account_key}] PnL not available from TradeLocker, calculating manually with exit price {exit_price}")
             try:
-                # Get instrument details
+                # Get instrument details for accurate calculation
                 instruments = await client.get_all_instruments()
                 instrument = next(
                     (i for i in instruments if trade.symbol in i.get('name', '')),
                     None
                 )
                 
-                # Use proper USD P&L calculation
-                from ..risk.calculator import calculate_usd_pnl
-                pnl = await calculate_usd_pnl(
-                    symbol=trade.symbol,
-                    entry_price=trade.entry_price,
-                    exit_price=exit_price,
-                    lot_size=trade.lot_size,
-                    direction=trade.direction,
-                    client=client,
-                    instrument=instrument
-                )
+                if not instrument:
+                    logger.error(f"[{account_key}] Instrument not found for {trade.symbol}")
+                    pnl = 0.0
+                else:
+                    # Use proper USD P&L calculation with accurate instrument data
+                    from ..risk.calculator import calculate_usd_pnl
+                    pnl = await calculate_usd_pnl(
+                        symbol=trade.symbol,
+                        entry_price=trade.entry_price,
+                        exit_price=exit_price,
+                        lot_size=trade.lot_size,
+                        direction=trade.direction,
+                        client=client,
+                        instrument=instrument
+                    )
+                    logger.info(
+                        f"[{account_key}] Calculated P&L for {trade.symbol}: "
+                        f"Entry={trade.entry_price}, Exit={exit_price}, "
+                        f"Lots={trade.lot_size}, Direction={trade.direction}, "
+                        f"Result=${pnl:.2f}"
+                    )
             except Exception as e:
                 logger.error(f"Failed to calculate P&L for {trade.symbol}: {e}")
                 pnl = 0.0
