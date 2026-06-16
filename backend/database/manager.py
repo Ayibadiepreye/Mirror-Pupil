@@ -93,6 +93,17 @@ class DatabaseManager:
             await self.pool.close()
             logger.info("✓ Database disconnected")
     
+    async def execute_raw(self, query: str, *args):
+        """
+        Execute a raw SQL query.
+        
+        Args:
+            query: SQL query string
+            *args: Query parameters
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(query, *args)
+    
     async def initialize_schema(self):
         """
         Initialize database schema and insert default data.

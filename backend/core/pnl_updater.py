@@ -105,15 +105,23 @@ class LivePnLUpdater:
     async def _update_account_pnl(self, account_key: str):
         """
         Update PnL for all active trades in a single account.
+        Also updates account-level daily_pnl.
         
         Args:
             account_key: Account key
         """
         try:
+            # Get account details
+            account = await self.db.get_account(account_key)
+            if not account:
+                return
+            
             # Get active trades for this account
             trades = await self.db.get_active_trades(account_key)
             
             if not trades:
+                # No active trades - still update daily_pnl (for closed trades)
+                await self._update_account_daily_pnl(account_key, account, 0.0)
                 return
             
             # Filter only filled trades with position IDs
@@ -123,6 +131,8 @@ class LivePnLUpdater:
             ]
             
             if not filled_trades:
+                # No filled trades - update daily_pnl with 0 floating
+                await self._update_account_daily_pnl(account_key, account, 0.0)
                 return
             
             # Get TradeLocker client
@@ -143,8 +153,10 @@ class LivePnLUpdater:
                 if pos_id:
                     position_map[pos_id] = pos
             
-            # Update PnL for each trade
+            # Update PnL for each trade and accumulate total floating PnL
             updates_count = 0
+            total_floating_pnl = 0.0
+            
             for trade in filled_trades:
                 try:
                     if trade.tl_position_id in position_map:
@@ -163,6 +175,7 @@ class LivePnLUpdater:
                                 unrealized_pnl
                             )
                             updates_count += 1
+                            total_floating_pnl += unrealized_pnl
                             
                 except Exception as e:
                     logger.warning(
@@ -170,13 +183,50 @@ class LivePnLUpdater:
                     )
                     # Continue with other trades
             
+            # Update account-level daily_pnl
+            await self._update_account_daily_pnl(account_key, account, total_floating_pnl)
+            
             if updates_count > 0:
                 logger.debug(
-                    f"[{account_key}] Updated PnL for {updates_count}/{len(filled_trades)} trades"
+                    f"[{account_key}] Updated PnL for {updates_count}/{len(filled_trades)} trades, "
+                    f"floating P&L: ${total_floating_pnl:.2f}"
                 )
                 
         except Exception as e:
             logger.error(f"[{account_key}] Failed to update account PnL: {e}")
+    
+    async def _update_account_daily_pnl(
+        self,
+        account_key: str,
+        account: "Account",
+        floating_pnl: float
+    ):
+        """
+        Update account-level daily_pnl.
+        
+        Formula: daily_pnl = (current_balance - daily_start_balance) + floating_pnl
+        
+        Args:
+            account_key: Account key
+            account: Account object
+            floating_pnl: Total unrealized P&L from open positions
+        """
+        try:
+            # Calculate realized P&L (from closed trades today)
+            realized_pnl = (account.current_balance or 0.0) - (account.daily_start_balance or account.current_balance or 0.0)
+            
+            # Total daily P&L = realized + unrealized
+            daily_pnl = realized_pnl + floating_pnl
+            
+            # Update in database
+            await self.db.execute_raw(
+                "UPDATE accounts SET daily_pnl = $1 WHERE account_key = $2",
+                daily_pnl,
+                account_key
+            )
+            
+        except Exception as e:
+            logger.error(f"[{account_key}] Failed to update daily_pnl: {e}")
 
 
 # Global instance (singleton pattern)
