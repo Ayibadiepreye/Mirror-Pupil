@@ -1600,7 +1600,19 @@ class DatabaseManager:
                                 account_keys, limit
                             )
                 
-                return [dict(row) for row in rows]
+                # Parse metadata JSON strings back to dicts
+                import json
+                result = []
+                for row in rows:
+                    row_dict = dict(row)
+                    if row_dict.get('metadata') and isinstance(row_dict['metadata'], str):
+                        try:
+                            row_dict['metadata'] = json.loads(row_dict['metadata'])
+                        except:
+                            row_dict['metadata'] = {}
+                    result.append(row_dict)
+                
+                return result
         except Exception as e:
             logger.error(f"Failed to get notifications: {e}")
             return []
@@ -1613,7 +1625,19 @@ class DatabaseManager:
                     "SELECT * FROM notifications WHERE notification_id = $1",
                     notification_id
                 )
-                return dict(row) if row else None
+                if not row:
+                    return None
+                
+                # Parse metadata JSON string back to dict
+                import json
+                row_dict = dict(row)
+                if row_dict.get('metadata') and isinstance(row_dict['metadata'], str):
+                    try:
+                        row_dict['metadata'] = json.loads(row_dict['metadata'])
+                    except:
+                        row_dict['metadata'] = {}
+                
+                return row_dict
         except Exception as e:
             logger.error(f"Failed to get notification {notification_id}: {e}")
             return None

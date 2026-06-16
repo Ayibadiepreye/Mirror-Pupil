@@ -1123,41 +1123,63 @@ class TradeExecutor:
             
             # CLOSE_ALL or IMPLIED_CLOSE
             elif action in ['CLOSE_ALL', 'IMPLIED_CLOSE']:
-                await client.close_position(position_id=int(trade.tl_position_id))
-                
-                # Get exit price
+                # Get exit price and PnL BEFORE closing position
                 try:
                     market_price = await client.get_market_price(trade.symbol)
                     exit_price = market_price if market_price else trade.entry_price
                 except Exception:
                     exit_price = trade.entry_price
                 
-                # Calculate P&L in USD
+                # PRIMARY: Get unrealizedPl from TradeLocker position BEFORE closing
+                pnl = None
                 try:
-                    instruments = await client.get_all_instruments()
-                    instrument = next(
-                        (i for i in instruments if trade.symbol in i.get('name', '')),
+                    all_positions = await client.get_all_positions()
+                    position = next(
+                        (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
                         None
                     )
-                    
-                    from ..risk.calculator import calculate_usd_pnl
-                    pnl = await calculate_usd_pnl(
-                        symbol=trade.symbol,
-                        entry_price=trade.entry_price,
-                        exit_price=exit_price,
-                        lot_size=trade.lot_size,
-                        direction=trade.direction,
-                        client=client,
-                        instrument=instrument
-                    )
+                    if position:
+                        # Primary: unrealizedPl
+                        pnl = position.get('unrealizedPl')
+                        # Fallback: profit or pnl fields
+                        if pnl is None:
+                            pnl = position.get('profit') or position.get('pnl')
+                        
+                        if pnl is not None:
+                            logger.info(f"[{account_key}] Using TradeLocker unrealizedPl: ${pnl:.2f}")
                 except Exception as e:
-                    logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                    # Fallback: return 0.0 instead of incorrect calculation
-                    logger.critical(
-                        f"[{account_key}] CRITICAL: P&L calculation failed for {trade.symbol}. "
-                        f"Recording as $0.00. Manual review required. Trade ID: {trade.trade_id}"
-                    )
-                    pnl = 0.0
+                    logger.warning(f"[{account_key}] Failed to fetch unrealizedPl: {e}")
+                
+                # FALLBACK: Calculate P&L manually if unavailable
+                if pnl is None:
+                    logger.warning(f"[{account_key}] unrealizedPl not available, calculating manually")
+                    try:
+                        instruments = await client.get_all_instruments()
+                        instrument = next(
+                            (i for i in instruments if trade.symbol in i.get('name', '')),
+                            None
+                        )
+                        
+                        from ..risk.calculator import calculate_usd_pnl
+                        pnl = await calculate_usd_pnl(
+                            symbol=trade.symbol,
+                            entry_price=trade.entry_price,
+                            exit_price=exit_price,
+                            lot_size=trade.lot_size,
+                            direction=trade.direction,
+                            client=client,
+                            instrument=instrument
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
+                        logger.critical(
+                            f"[{account_key}] CRITICAL: P&L calculation failed for {trade.symbol}. "
+                            f"Recording as $0.00. Manual review required. Trade ID: {trade.trade_id}"
+                        )
+                        pnl = 0.0
+                
+                # Close position on TradeLocker AFTER getting PnL
+                await client.close_position(position_id=int(trade.tl_position_id))
                 
                 await self.db.move_trade_to_history(
                     trade.trade_id,
@@ -1405,34 +1427,57 @@ async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
             
             client = account['client']
             
-            # Close position on TradeLocker
+            # Get exit price and PnL BEFORE closing position
+            market_price = await client.get_market_price(trade.symbol)
+            exit_price = market_price if market_price else trade.entry_price
+            
+            # PRIMARY: Get unrealizedPl from TradeLocker position BEFORE closing
+            pnl = None
+            if trade.tl_position_id:
+                try:
+                    all_positions = await client.get_all_positions()
+                    position = next(
+                        (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
+                        None
+                    )
+                    if position:
+                        # Primary: unrealizedPl
+                        pnl = position.get('unrealizedPl')
+                        # Fallback: profit or pnl fields
+                        if pnl is None:
+                            pnl = position.get('profit') or position.get('pnl')
+                        
+                        if pnl is not None:
+                            logger.info(f"[{account_key}] Using TradeLocker unrealizedPl: ${pnl:.2f}")
+                except Exception as e:
+                    logger.warning(f"[{account_key}] Failed to fetch unrealizedPl: {e}")
+            
+            # FALLBACK: Calculate P&L manually if unavailable
+            if pnl is None:
+                logger.warning(f"[{account_key}] unrealizedPl not available, calculating manually")
+                instruments = await client.get_all_instruments()
+                instrument = next(
+                    (i for i in instruments if trade.symbol in i.get('name', '')),
+                    None
+                )
+                
+                from ..risk.calculator import calculate_usd_pnl
+                pnl = await calculate_usd_pnl(
+                    symbol=trade.symbol,
+                    entry_price=trade.entry_price,
+                    exit_price=exit_price,
+                    lot_size=trade.lot_size,
+                    direction=trade.direction,
+                    client=client,
+                    instrument=instrument
+                )
+            
+            # Close position on TradeLocker AFTER getting PnL
             if trade.tl_position_id:
                 success = await client.close_position(int(trade.tl_position_id))
                 if not success:
                     logger.error(f"Failed to close position {trade.tl_position_id}")
                     return False
-            
-            # Get exit price
-            market_price = await client.get_market_price(trade.symbol)
-            exit_price = market_price if market_price else trade.entry_price
-            
-            # Calculate P&L
-            instruments = await client.get_all_instruments()
-            instrument = next(
-                (i for i in instruments if trade.symbol in i.get('name', '')),
-                None
-            )
-            
-            from ..risk.calculator import calculate_usd_pnl
-            pnl = await calculate_usd_pnl(
-                symbol=trade.symbol,
-                entry_price=trade.entry_price,
-                exit_price=exit_price,
-                lot_size=trade.lot_size,
-                direction=trade.direction,
-                client=client,
-                instrument=instrument
-            )
             
             # Move to history with manual action type
             await self.db.move_trade_to_history(

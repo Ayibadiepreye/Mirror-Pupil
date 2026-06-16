@@ -161,16 +161,37 @@ class PositionReconciliationMonitor:
             f"{trade.direction} (position_id: {trade.tl_position_id})"
         )
         
-        # Try to get exit price from recent trade history
+        # Try to get exit price and PnL from TradeLocker closed positions
         exit_price = None
+        pnl = None
         close_reason = "EXTERNAL"
         
         try:
-            # Get recent closed positions (TradeLocker may have history)
-            # Note: This depends on TradeLocker API capabilities
-            # Fallback to current market price if unavailable
+            # Try to get closed position from TradeLocker history/executions
+            # Note: TradeLocker may provide recent executions or trade history
+            # We'll try to fetch it, but this may not always be available
+            
+            # Get current market price as fallback for exit price
             market_price = await client.get_market_price(trade.symbol)
             exit_price = market_price if market_price else trade.entry_price
+            
+            # Try to get PnL from TradeLocker's recent executions or account history
+            # This is best-effort - if unavailable, we'll calculate manually below
+            try:
+                # Check if TradeLocker client has method to get recent executions
+                if hasattr(client, 'get_recent_executions'):
+                    executions = await client.get_recent_executions(limit=50)
+                    # Find execution matching our position
+                    matching_exec = next(
+                        (e for e in executions if str(e.get('positionId')) == str(trade.tl_position_id)),
+                        None
+                    )
+                    if matching_exec:
+                        pnl = matching_exec.get('profit') or matching_exec.get('pnl') or matching_exec.get('unrealizedPl')
+                        if pnl is not None:
+                            logger.info(f"[{account_key}] Found PnL from executions: ${pnl:.2f}")
+            except Exception as e:
+                logger.debug(f"[{account_key}] Could not fetch executions: {e}")
             
             # Determine close reason based on exit price proximity to TP/SL
             if trade.tp and abs(exit_price - trade.tp) < 0.01:  # Within 1 pip
@@ -187,29 +208,31 @@ class PositionReconciliationMonitor:
             logger.error(f"Failed to get exit price for {trade.symbol}: {e}")
             exit_price = trade.entry_price  # Fallback
         
-        # Calculate P&L in USD
-        try:
-            # Get instrument details
-            instruments = await client.get_all_instruments()
-            instrument = next(
-                (i for i in instruments if trade.symbol in i.get('name', '')),
-                None
-            )
-            
-            # Use proper USD P&L calculation
-            from ..risk.calculator import calculate_usd_pnl
-            pnl = await calculate_usd_pnl(
-                symbol=trade.symbol,
-                entry_price=trade.entry_price,
-                exit_price=exit_price,
-                lot_size=trade.lot_size,
-                direction=trade.direction,
-                client=client,
-                instrument=instrument
-            )
-        except Exception as e:
-            logger.error(f"Failed to calculate P&L for {trade.symbol}: {e}")
-            pnl = 0.0
+        # FALLBACK: Calculate P&L manually if not available from TradeLocker
+        if pnl is None:
+            logger.warning(f"[{account_key}] PnL not available from TradeLocker, calculating manually")
+            try:
+                # Get instrument details
+                instruments = await client.get_all_instruments()
+                instrument = next(
+                    (i for i in instruments if trade.symbol in i.get('name', '')),
+                    None
+                )
+                
+                # Use proper USD P&L calculation
+                from ..risk.calculator import calculate_usd_pnl
+                pnl = await calculate_usd_pnl(
+                    symbol=trade.symbol,
+                    entry_price=trade.entry_price,
+                    exit_price=exit_price,
+                    lot_size=trade.lot_size,
+                    direction=trade.direction,
+                    client=client,
+                    instrument=instrument
+                )
+            except Exception as e:
+                logger.error(f"Failed to calculate P&L for {trade.symbol}: {e}")
+                pnl = 0.0
         
         # Move to history
         try:
