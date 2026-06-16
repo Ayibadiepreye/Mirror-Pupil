@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import logoUrl from "@/assets/logo.svg";
 import { clearSession } from "@/lib/mp/auth";
+import { useAuth } from "@/lib/mp/auth-context";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -17,7 +18,7 @@ const NAV = [
   { to: "/trades", label: "Active", icon: TrendingUp },
   { to: "/history", label: "History", icon: History },
   { to: "/bot-control", label: "Bot", icon: Bot },
-  { to: "/users", label: "Users", icon: UserCog },
+  { to: "/users", label: "Users", icon: UserCog, adminOnly: true },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -44,6 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const wsStatus = useMirrorPupilWebSocket();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const { isSuperAdmin } = useAuth();
 
   const unreadQ = useQuery({
     queryKey: QK.notifications(true),
@@ -59,6 +61,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const unread = unreadQ.data?.length ?? 0;
   const botRunning = botQ.data?.status === "running";
   const onNotificationsPage = pathname.startsWith("/notifications");
+
+  // Filter navigation items based on admin status
+  const visibleNav = NAV.filter(item => !item.adminOnly || isSuperAdmin);
 
   return (
     <div className="min-h-screen flex flex-col bg-[color:var(--mp-app)] text-[color:var(--mp-text)]">
@@ -127,7 +132,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex flex-1 min-h-0">
         {/* Sidebar (md+) */}
         <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-[color:var(--mp-border)] bg-[color:var(--mp-base)] p-3 gap-1">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
             const Icon = item.icon;
             return (
@@ -158,12 +163,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       {/* Floating action nav (mobile) */}
-      <MobileFabNav pathname={pathname} />
+      <MobileFabNav pathname={pathname} items={visibleNav} />
     </div>
   );
 }
 
-function MobileFabNav({ pathname }: { pathname: string }) {
+function MobileFabNav({ pathname, items }: { pathname: string; items: typeof NAV[number][] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -185,7 +190,6 @@ function MobileFabNav({ pathname }: { pathname: string }) {
   // Arrange items in a quarter-arc (180°→270°) around the FAB,
   // sweeping up-and-to-the-left from the bottom-right corner.
   const RADIUS = 110; // px from FAB center to each item center
-  const items = NAV;
   const startDeg = 180; // straight left
   const endDeg = 270;   // straight up
   const step = items.length > 1 ? (endDeg - startDeg) / (items.length - 1) : 0;

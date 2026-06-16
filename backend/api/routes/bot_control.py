@@ -9,7 +9,7 @@ from loguru import logger
 
 from ...database import DatabaseManager
 from ...core.trade_executor import TradeExecutor
-from ...core.firebase_auth import require_super_admin
+from ...core.firebase_auth import require_super_admin, get_current_user
 from ...core.bot_state import get_bot_state
 from ...risk.calculator import calculate_usd_pnl
 from ..main import get_db, get_executor
@@ -48,11 +48,11 @@ class ForceCloseRequest(BaseModel):
 @router.get("/status", response_model=BotStatusResponse)
 async def get_bot_status(
     db: DatabaseManager = Depends(get_db),
-    admin: dict = Depends(require_super_admin)
+    user: dict = Depends(get_current_user)
 ):
     """
     Get current bot status.
-    **Super admin only.**
+    **All authenticated users can view.**
     
     Returns:
         Bot status information

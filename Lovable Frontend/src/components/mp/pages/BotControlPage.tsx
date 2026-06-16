@@ -1,4 +1,6 @@
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tantml:function_calls>
+<invoke name="str_replace">
+<parameter name="newStr">import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Bot, PauseCircle, PlayCircle, RotateCw, ShieldOff,
 } from "lucide-react";
@@ -11,10 +13,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { shortenKey } from "@/lib/mp/utils";
+import { useAuth } from "@/lib/mp/auth-context";
 
 export function BotControlPage() {
   const qc = useQueryClient();
   const confirm = useConfirm();
+  const { isSuperAdmin } = useAuth();
   const botQ = useQuery({ queryKey: QK.botStatus, queryFn: botApi.status, refetchInterval: 10_000 });
   const accountsQ = useQuery({ queryKey: QK.accounts, queryFn: accountsApi.list });
   const [forceAccount, setForceAccount] = useState("");
@@ -29,14 +33,17 @@ export function BotControlPage() {
   const running = bot?.status === "running";
 
   const start = async () => {
+    if (!isSuperAdmin) { toast.error("Admin access required"); return; }
     if (!(await confirm({ title: "Start bot?", description: "Resume processing signals and executing trades." }))) return;
     controlM.mutate("start");
   };
   const stop = async () => {
+    if (!isSuperAdmin) { toast.error("Admin access required"); return; }
     if (!(await confirm({ title: "Stop bot?", description: "Bot will stop accepting signals. Open positions remain.", destructive: true }))) return;
     controlM.mutate("stop");
   };
   const restart = async () => {
+    if (!isSuperAdmin) { toast.error("Admin access required"); return; }
     if (!(await confirm({ title: "Restart bot?", description: "Bot will stop then start." }))) return;
     await botApi.control("stop");
     await new Promise((r) => setTimeout(r, 250));
@@ -45,12 +52,14 @@ export function BotControlPage() {
     toast.success("Bot restarted");
   };
   const closeAll = async () => {
+    if (!isSuperAdmin) { toast.error("Admin access required"); return; }
     if (!(await confirm({ title: "Force close ALL positions?", destructive: true, confirmLabel: "Force close all" }))) return;
     const r = await botApi.forceCloseAll();
     toast.success(`Closed ${r.closed_count} position(s)`);
     qc.invalidateQueries({ queryKey: QK.activeTrades });
   };
   const closeAccount = async () => {
+    if (!isSuperAdmin) { toast.error("Admin access required"); return; }
     if (!forceAccount) { toast.error("Pick an account"); return; }
     if (!(await confirm({ title: `Force close all positions for ${shortenKey(forceAccount)}?`, destructive: true }))) return;
     const r = await botApi.forceCloseAccount(forceAccount);
@@ -81,15 +90,15 @@ export function BotControlPage() {
             </div>
             <div className="flex flex-wrap gap-2 justify-end">
               {!running ? (
-                <Button onClick={start} className="gap-2 bg-[color:var(--mp-success)] hover:bg-[color:var(--mp-success)]/90 text-black">
+                <Button onClick={start} disabled={!isSuperAdmin} className="gap-2 bg-[color:var(--mp-success)] hover:bg-[color:var(--mp-success)]/90 text-black disabled:opacity-50 disabled:cursor-not-allowed">
                   <PlayCircle className="size-4" /> Start
                 </Button>
               ) : (
-                <Button onClick={stop} variant="outline" className="gap-2">
+                <Button onClick={stop} disabled={!isSuperAdmin} variant="outline" className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                   <PauseCircle className="size-4" /> Stop
                 </Button>
               )}
-              <Button onClick={restart} variant="outline" className="gap-2">
+              <Button onClick={restart} disabled={!isSuperAdmin} variant="outline" className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <RotateCw className="size-4" /> Restart
               </Button>
             </div>
@@ -125,21 +134,22 @@ export function BotControlPage() {
         <div className="flex items-center gap-2">
           <ShieldOff className="size-5 text-[color:var(--mp-danger)]" />
           <h2 className="font-semibold">Emergency actions</h2>
+          {!isSuperAdmin && <span className="text-xs text-[color:var(--mp-text-dim)]">(Admin only)</span>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={closeAll} className="gap-2 bg-[color:var(--mp-danger)] hover:bg-[color:var(--mp-danger)]/90 text-white">
+          <Button onClick={closeAll} disabled={!isSuperAdmin} className="gap-2 bg-[color:var(--mp-danger)] hover:bg-[color:var(--mp-danger)]/90 text-white disabled:opacity-50 disabled:cursor-not-allowed">
             <ShieldOff className="size-4" /> Force close all
           </Button>
           <div className="flex items-center gap-2">
-            <Select value={forceAccount} onValueChange={setForceAccount}>
-              <SelectTrigger className="w-[260px]"><SelectValue placeholder="Pick account…" /></SelectTrigger>
+            <Select value={forceAccount} onValueChange={setForceAccount} disabled={!isSuperAdmin}>
+              <SelectTrigger className="w-[260px] disabled:opacity-50 disabled:cursor-not-allowed"><SelectValue placeholder="Pick account…" /></SelectTrigger>
               <SelectContent>
                 {(accountsQ.data ?? []).map((a) => (
                   <SelectItem key={a.account_key} value={a.account_key}>{a.display_name ?? a.tl_email}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={closeAccount} variant="outline" className="gap-2">
+            <Button onClick={closeAccount} disabled={!isSuperAdmin} variant="outline" className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
               <ShieldOff className="size-4" /> Close account
             </Button>
           </div>
