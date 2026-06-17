@@ -1089,7 +1089,9 @@ class DatabaseManager:
         trade_id: int,
         exit_price: float,
         pnl: float,
-        close_reason: str
+        close_reason: str,
+        outcome: Optional[str] = None,
+        manual_action_type: Optional[str] = None
     ) -> bool:
         """Move trade from active_trades to trade_history."""
         try:
@@ -1104,6 +1106,10 @@ class DatabaseManager:
                     logger.warning(f"Trade {trade_id} not found in active_trades")
                     return False
                 
+                # Calculate outcome if not provided
+                if outcome is None:
+                    outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
+                
                 # Insert into history
                 await conn.execute(
                     """
@@ -1111,15 +1117,16 @@ class DatabaseManager:
                         account_key, channel_id, signal_id, sub_signal_id,
                         symbol, direction, entry_price, exit_price,
                         sl, tp, lot_size, entry_time, exit_time,
-                        pnl, outcome, close_reason
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), $13, $14, $15)
+                        pnl, outcome, close_reason, manual_action_type
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), $13, $14, $15, $16)
                     """,
                     trade['account_key'], trade['channel_id'], trade['signal_id'],
                     trade['sub_signal_id'], trade['symbol'], trade['direction'],
                     trade['entry_price'], exit_price, trade['sl'], trade['tp'],
                     trade['lot_size'], trade['entry_time'], pnl,
-                    'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE'),
-                    close_reason
+                    outcome,
+                    close_reason,
+                    manual_action_type
                 )
                 
                 # Remove from active_trades
@@ -1791,6 +1798,10 @@ class DatabaseManager:
     ) -> Optional[int]:
         """Add a manual action audit record. Returns action_id."""
         try:
+            # Convert action_data dict to JSON string for PostgreSQL
+            import json
+            action_data_json = json.dumps(action_data) if action_data else None
+            
             async with self.pool.acquire() as conn:
                 action_id = await conn.fetchval(
                     """
@@ -1799,7 +1810,7 @@ class DatabaseManager:
                     ) VALUES ($1, $2, $3, $4)
                     RETURNING action_id
                     """,
-                    account_key, trade_id, action_type, action_data
+                    account_key, trade_id, action_type, action_data_json
                 )
                 logger.debug(f"✓ Logged manual action: {action_type}")
                 return action_id
@@ -1814,6 +1825,7 @@ class DatabaseManager:
     ) -> List[Dict]:
         """Get manual action history."""
         try:
+            import json
             async with self.pool.acquire() as conn:
                 if account_key:
                     rows = await conn.fetch(
@@ -1834,7 +1846,19 @@ class DatabaseManager:
                         """,
                         limit
                     )
-                return [dict(row) for row in rows]
+                
+                # Parse action_data JSON string back to dict
+                result = []
+                for row in rows:
+                    row_dict = dict(row)
+                    if row_dict.get('action_data'):
+                        try:
+                            row_dict['action_data'] = json.loads(row_dict['action_data'])
+                        except:
+                            row_dict['action_data'] = {}
+                    result.append(row_dict)
+                
+                return result
         except Exception as e:
             logger.error(f"Failed to get manual actions: {e}")
             return []

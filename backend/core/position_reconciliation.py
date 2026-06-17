@@ -172,22 +172,29 @@ class PositionReconciliationMonitor:
             # We'll try to fetch it, but this may not always be available
             
             # Try to get PnL from TradeLocker's recent executions or account history
-            # This is best-effort - if unavailable, we'll calculate manually below
-            try:
-                # Check if TradeLocker client has method to get recent executions
-                if hasattr(client, 'get_recent_executions'):
-                    executions = await client.get_recent_executions(limit=50)
-                    # Find execution matching our position
-                    matching_exec = next(
-                        (e for e in executions if str(e.get('positionId')) == str(trade.tl_position_id)),
-                        None
-                    )
-                    if matching_exec:
-                        pnl = matching_exec.get('profit') or matching_exec.get('pnl') or matching_exec.get('unrealizedPl')
-                        if pnl is not None:
-                            logger.info(f"[{account_key}] Found PnL from executions: ${pnl:.2f}")
-            except Exception as e:
-                logger.debug(f"[{account_key}] Could not fetch executions: {e}")
+            # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+            # This is TradeLocker's actual unrealizedPl, most accurate
+            if trade.current_pnl is not None:
+                pnl = trade.current_pnl
+                logger.info(f"[{account_key}] Using saved current_pnl from database: ${pnl:.2f}")
+            
+            # FALLBACK: Try to get PnL from TradeLocker executions if saved PnL unavailable
+            if pnl is None:
+                try:
+                    # Check if TradeLocker client has method to get recent executions
+                    if hasattr(client, 'get_recent_executions'):
+                        executions = await client.get_recent_executions(limit=50)
+                        # Find execution matching our position
+                        matching_exec = next(
+                            (e for e in executions if str(e.get('positionId')) == str(trade.tl_position_id)),
+                            None
+                        )
+                        if matching_exec:
+                            pnl = matching_exec.get('profit') or matching_exec.get('pnl') or matching_exec.get('unrealizedPl')
+                            if pnl is not None:
+                                logger.info(f"[{account_key}] Found PnL from executions: ${pnl:.2f}")
+                except Exception as e:
+                    logger.debug(f"[{account_key}] Could not fetch executions: {e}")
             
             # Determine exit price and close reason
             # Priority 1: Use TP/SL prices if they were set (most accurate for TP/SL hits)
@@ -226,41 +233,27 @@ class PositionReconciliationMonitor:
             logger.error(f"Failed to determine exit price for {trade.symbol}: {e}")
             exit_price = trade.entry_price  # Ultimate fallback
         
-        # FALLBACK: Calculate P&L manually if not available from TradeLocker
+        # FALLBACK: Fetch unrealizedPl from position in real-time if saved PnL unavailable
         if pnl is None:
-            logger.warning(f"[{account_key}] PnL not available from TradeLocker, calculating manually with exit price {exit_price}")
+            logger.warning(f"[{account_key}] No PnL from database or executions, fetching from position...")
             try:
-                # Get instrument details for accurate calculation
-                instruments = await client.get_all_instruments()
-                instrument = next(
-                    (i for i in instruments if trade.symbol in i.get('name', '')),
+                # Fetch positions and find our closed position if still available
+                all_positions = await client.get_all_positions()
+                position = next(
+                    (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
                     None
                 )
-                
-                if not instrument:
-                    logger.error(f"[{account_key}] Instrument not found for {trade.symbol}")
-                    pnl = 0.0
-                else:
-                    # Use proper USD P&L calculation with accurate instrument data
-                    from ..risk.calculator import calculate_usd_pnl
-                    pnl = await calculate_usd_pnl(
-                        symbol=trade.symbol,
-                        entry_price=trade.entry_price,
-                        exit_price=exit_price,
-                        lot_size=trade.lot_size,
-                        direction=trade.direction,
-                        client=client,
-                        instrument=instrument
-                    )
-                    logger.info(
-                        f"[{account_key}] Calculated P&L for {trade.symbol}: "
-                        f"Entry={trade.entry_price}, Exit={exit_price}, "
-                        f"Lots={trade.lot_size}, Direction={trade.direction}, "
-                        f"Result=${pnl:.2f}"
-                    )
+                if position:
+                    pnl = position.get('unrealizedPl') or position.get('profit') or position.get('pnl')
+                    if pnl is not None:
+                        logger.info(f"[{account_key}] Found PnL from position: ${pnl:.2f}")
             except Exception as e:
-                logger.error(f"Failed to calculate P&L for {trade.symbol}: {e}")
-                pnl = 0.0
+                logger.error(f"[{account_key}] Failed to fetch position PnL: {e}")
+        
+        # LAST RESORT: Use 0.0 if still unavailable (better than wrong calculation)
+        if pnl is None:
+            logger.error(f"[{account_key}] Could not determine PnL for {trade.symbol}, using 0.0")
+            pnl = 0.0
         
         # Move to history
         try:

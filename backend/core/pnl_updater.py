@@ -1,6 +1,6 @@
 """
 Mirror Pupil - Live PnL Updater
-Background service that updates unrealized PnL for active trades every 2 minutes.
+Background service that updates unrealized PnL for active trades every 15 seconds.
 """
 
 import asyncio
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class LivePnLUpdater:
     """
     Background service that fetches live unrealized PnL from TradeLocker
-    and updates active trades every 2 minutes.
+    and updates active trades every 15 seconds.
     
     Features:
     - Non-blocking updates (doesn't interfere with other processes)
@@ -25,13 +25,13 @@ class LivePnLUpdater:
     - Graceful degradation on API errors
     """
     
-    def __init__(self, db: "DatabaseManager", update_interval: int = 120):
+    def __init__(self, db: "DatabaseManager", update_interval: int = 15):
         """
         Initialize PnL updater.
         
         Args:
             db: Database manager instance
-            update_interval: Update interval in seconds (default: 120 = 2 minutes)
+            update_interval: Update interval in seconds (default: 15 seconds)
         """
         self.db = db
         self.update_interval = update_interval
@@ -60,7 +60,7 @@ class LivePnLUpdater:
         logger.info("✓ Stopped live PnL updater")
     
     async def _update_loop(self):
-        """Main update loop - runs every 2 minutes."""
+        """Main update loop - runs every 15 seconds."""
         while True:
             try:
                 await asyncio.sleep(self.update_interval)

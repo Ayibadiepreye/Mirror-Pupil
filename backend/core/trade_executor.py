@@ -1383,21 +1383,7 @@ class TradeExecutor:
         except Exception as e:
             logger.error(f"[{account_key}] Error applying {action} to trade {trade.trade_id}: {e}")
             raise
-
-
-# Global executor instance
-_executor: Optional[TradeExecutor] = None
-
-
-async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
-    """Get the global trade executor instance."""
-    global _executor
-    if _executor is None:
-        _executor = TradeExecutor(db)
-        await _executor.initialize()
-    return _executor
-
-
+    
     # ==================== MANUAL ACTION METHODS ====================
     
     async def execute_manual_close(self, trade_id: int, account_key: str, reason: str = "Manual close") -> bool:
@@ -1427,50 +1413,42 @@ async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
             
             client = account['client']
             
-            # Get exit price and PnL BEFORE closing position
+            # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+            # This is the most accurate as it's TradeLocker's actual unrealizedPl
+            pnl = trade.current_pnl
+            
+            if pnl is not None:
+                logger.info(f"[{account_key}] Using saved current_pnl from database: ${pnl:.2f}")
+            else:
+                # FALLBACK: Fetch unrealizedPl from TradeLocker position in real-time
+                logger.warning(f"[{account_key}] No saved PnL, fetching from TradeLocker...")
+                if trade.tl_position_id:
+                    try:
+                        all_positions = await client.get_all_positions()
+                        position = next(
+                            (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
+                            None
+                        )
+                        if position:
+                            # Primary: unrealizedPl
+                            pnl = position.get('unrealizedPl')
+                            # Fallback: profit or pnl fields
+                            if pnl is None:
+                                pnl = position.get('profit') or position.get('pnl')
+                            
+                            if pnl is not None:
+                                logger.info(f"[{account_key}] Fetched TradeLocker unrealizedPl: ${pnl:.2f}")
+                    except Exception as e:
+                        logger.warning(f"[{account_key}] Failed to fetch unrealizedPl: {e}")
+                
+                # LAST RESORT: Use 0.0 if still unavailable (better than wrong calculation)
+                if pnl is None:
+                    logger.error(f"[{account_key}] Could not determine PnL, using 0.0")
+                    pnl = 0.0
+            
+            # Get exit price for history record
             market_price = await client.get_market_price(trade.symbol)
             exit_price = market_price if market_price else trade.entry_price
-            
-            # PRIMARY: Get unrealizedPl from TradeLocker position BEFORE closing
-            pnl = None
-            if trade.tl_position_id:
-                try:
-                    all_positions = await client.get_all_positions()
-                    position = next(
-                        (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
-                        None
-                    )
-                    if position:
-                        # Primary: unrealizedPl
-                        pnl = position.get('unrealizedPl')
-                        # Fallback: profit or pnl fields
-                        if pnl is None:
-                            pnl = position.get('profit') or position.get('pnl')
-                        
-                        if pnl is not None:
-                            logger.info(f"[{account_key}] Using TradeLocker unrealizedPl: ${pnl:.2f}")
-                except Exception as e:
-                    logger.warning(f"[{account_key}] Failed to fetch unrealizedPl: {e}")
-            
-            # FALLBACK: Calculate P&L manually if unavailable
-            if pnl is None:
-                logger.warning(f"[{account_key}] unrealizedPl not available, calculating manually")
-                instruments = await client.get_all_instruments()
-                instrument = next(
-                    (i for i in instruments if trade.symbol in i.get('name', '')),
-                    None
-                )
-                
-                from ..risk.calculator import calculate_usd_pnl
-                pnl = await calculate_usd_pnl(
-                    symbol=trade.symbol,
-                    entry_price=trade.entry_price,
-                    exit_price=exit_price,
-                    lot_size=trade.lot_size,
-                    direction=trade.direction,
-                    client=client,
-                    instrument=instrument
-                )
             
             # Close position on TradeLocker AFTER getting PnL
             if trade.tl_position_id:
@@ -1629,3 +1607,16 @@ async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
         except Exception as e:
             logger.error(f"Failed to take partial profit on trade {trade_id}: {e}")
             return False
+
+
+# Global executor instance
+_executor: Optional[TradeExecutor] = None
+
+
+async def get_trade_executor(db: "DatabaseManager") -> TradeExecutor:
+    """Get the global trade executor instance."""
+    global _executor
+    if _executor is None:
+        _executor = TradeExecutor(db)
+        await _executor.initialize()
+    return _executor
