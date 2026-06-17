@@ -490,6 +490,15 @@ class TradeLockerClient:
         # ALWAYS disable netting - we want hedging mode for all orders
         position_netting = False
         
+        # Fix float precision by converting through string formatting
+        # This ensures clean decimals without precision errors
+        if quantity == int(quantity):
+            clean_qty = float(int(quantity))
+        elif quantity * 10 == int(quantity * 10):
+            clean_qty = float(f"{quantity:.1f}")
+        else:
+            clean_qty = float(f"{quantity:.2f}")
+        
         # Prepare SL/TP types (absolute prices)
         stop_loss_type = "absolute" if stop_loss else None
         take_profit_type = "absolute" if take_profit else None
@@ -497,7 +506,7 @@ class TradeLockerClient:
         order = await self._call_api(
             "create_order",
             instrument_id=instrument_id,
-            quantity=quantity,
+            quantity=clean_qty,  # Pass cleaned float
             side=side.lower(),
             price=price,
             type_=type_.lower(),
