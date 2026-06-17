@@ -115,6 +115,14 @@ class BalanceReconciliationMonitor:
             account_info = await tl_client.get_account_state()
             actual_balance = float(account_info.get('balance') or account_info.get('accountBalance', 0))
             
+            # Calculate equity (balance + floating PnL)
+            open_pnl = float(account_info.get('openNetPnL', 0.0) or account_info.get('openGrossPnL', 0.0) or 0.0)
+            equity = actual_balance + open_pnl
+            
+            # Update all_time_high_equity if this is a new high
+            if equity > (account.all_time_high_equity or 0.0):
+                await self.db.update_account_balance(account.account_key, actual_balance, equity)
+            
         except Exception as e:
             logger.error(
                 f"Failed to fetch balance for {account.account_key}: {e}"

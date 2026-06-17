@@ -87,6 +87,7 @@ class AccountResponse(BaseModel):
     tl_email: str
     tl_server: str
     display_name: Optional[str]
+    lot_size_override: Optional[float]
     initial_balance: float
     current_balance: float
     highest_banked_balance: float
