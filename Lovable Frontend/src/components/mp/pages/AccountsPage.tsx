@@ -27,6 +27,24 @@ const getDrawdownColor = (pct: number, limit: number) => {
   return "text-green-500";
 };
 
+const formatLotSize = (value: number): string => {
+  // Round to 2 decimals to handle float precision
+  const rounded = Math.round(value * 100) / 100;
+  
+  // Check if whole number
+  if (rounded === Math.floor(rounded)) {
+    return rounded.toString();
+  }
+  
+  // Check if second decimal is 0
+  if (rounded * 10 === Math.floor(rounded * 10)) {
+    return rounded.toFixed(1);
+  }
+  
+  // Second decimal has value
+  return rounded.toFixed(2);
+};
+
 const getConsistencyColor = (score: number | null) => {
   if (!score) return "text-gray-400";
   if (score >= 20) return "text-red-500";
@@ -160,7 +178,7 @@ export function AccountsPage() {
               <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-[color:var(--mp-text-dim)]">
                 <div><div className="uppercase tracking-wider">Initial</div><div className="text-[color:var(--mp-text)] font-mono">{formatBalance(a.initial_balance)}</div></div>
                 <div><div className="uppercase tracking-wider">Profile</div><div className="text-[color:var(--mp-text)] truncate">{profile?.profile_name ?? "—"}</div></div>
-                <div><div className="uppercase tracking-wider">Lot ovr.</div><div className="text-[color:var(--mp-text)] font-mono">{a.lot_size_override ?? "—"}</div></div>
+                <div><div className="uppercase tracking-wider">Lot ovr.</div><div className="text-[color:var(--mp-text)] font-mono">{a.lot_size_override != null ? formatLotSize(a.lot_size_override) : "—"}</div></div>
               </div>
               
               {/* Daily Drawdown */}

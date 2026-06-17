@@ -428,14 +428,28 @@ class TradeLockerClient:
     
     def round_lot_size(self, lot_size: float, lot_step: float) -> float:
         """
-        Round lot size to instrument's lot step.
-        Ensures lot sizes are valid multiples.
+        Round lot size to instrument's lot step with smart decimal formatting.
+        - Whole numbers: no decimals (1, 10, 100)
+        - Second decimal is 0: 1 decimal place (0.1, 1.5)
+        - Second decimal has value: 2 decimal places (0.01, 0.15, 1.25)
         """
         if lot_step == 0:
             return lot_size
         
+        # Round to lot step and fix float precision to 2 decimals
         rounded = round(lot_size / lot_step) * lot_step
-        return round(rounded, 2)  # Round to 2 decimals
+        rounded = round(rounded, 2)
+        
+        # Smart formatting: check if whole number, then 1 or 2 decimals
+        if rounded == int(rounded):
+            # Whole number (1.0, 10.0, 100.0) → return as integer
+            return float(int(rounded))
+        elif rounded * 10 == int(rounded * 10):
+            # Second decimal is 0 (0.1, 1.5, 10.2) → return with 1 decimal
+            return round(rounded, 1)
+        else:
+            # Second decimal has value (0.01, 0.15, 1.25) → return with 2 decimals
+            return round(rounded, 2)
     
     async def create_order(
         self,
