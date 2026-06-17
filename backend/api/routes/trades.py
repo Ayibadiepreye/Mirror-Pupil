@@ -12,7 +12,7 @@ import csv
 import io
 
 from ...database import DatabaseManager, ActiveTrade
-from ...core.trade_executor import TradeExecutor
+from ...core.trade_executor import get_trade_executor
 from ...core.account_manager import get_account_manager
 from ...core.firebase_auth import get_current_user
 from ..main import get_db
@@ -92,7 +92,7 @@ async def close_trade_manually(
             )
         
         # Execute close action through TradeExecutor
-        executor = TradeExecutor(db)
+        executor = await get_trade_executor(db)
         success = await executor.execute_manual_close(
             trade_id=trade_id,
             account_key=trade.account_key,
@@ -150,7 +150,7 @@ async def set_trade_to_breakeven(
                 detail=f"Trade not found: {trade_id}"
             )
         
-        executor = TradeExecutor(db)
+        executor = await get_trade_executor(db)
         success = await executor.execute_manual_breakeven(
             trade_id=trade_id,
             account_key=trade.account_key
@@ -217,7 +217,7 @@ async def take_partial_profit(
         # Extract percentage from action type (25, 50, or 75)
         percentage = int(action.action_type.split("_")[-1])
         
-        executor = TradeExecutor(db)
+        executor = await get_trade_executor(db)
         success = await executor.execute_manual_partial(
             trade_id=trade_id,
             account_key=trade.account_key,
