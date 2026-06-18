@@ -218,33 +218,38 @@ class EODCloseHandler:
                     except Exception:
                         exit_price = trade.entry_price  # Last resort fallback
                 
-                # Calculate P&L in USD using proper conversion
-                try:
-                    # Get instrument details for accurate calculation
-                    instruments = await tl_client.get_all_instruments()
-                    instrument = next(
-                        (i for i in instruments if trade.symbol in i.get('name', '')),
-                        None
-                    )
+                # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+                pnl = trade.current_pnl
+                
+                if pnl is not None:
+                    logger.info(f"[{account_key}] Using saved current_pnl: ${pnl:.2f}")
+                else:
+                    # FALLBACK: Fetch unrealizedPl from TradeLocker position in real-time
+                    logger.warning(f"[{account_key}] No saved PnL, fetching from TradeLocker...")
+                    try:
+                        all_positions = await tl_client.get_all_positions()
+                        position = next(
+                            (p for p in all_positions if str(p.get('id')) == str(trade.tl_position_id)),
+                            None
+                        )
+                        if position:
+                            pnl = position.get('unrealizedPl') or position.get('profit') or position.get('pnl')
+                            if pnl is not None:
+                                logger.info(f"[{account_key}] Fetched TradeLocker unrealizedPl: ${pnl:.2f}")
+                    except Exception as e:
+                        logger.warning(f"[{account_key}] Failed to fetch unrealizedPl: {e}")
                     
-                    # Use the proper USD P&L calculation function
-                    from ..risk.calculator import calculate_usd_pnl
-                    pnl = await calculate_usd_pnl(
-                        symbol=trade.symbol,
-                        entry_price=trade.entry_price,
-                        exit_price=exit_price,
-                        lot_size=trade.lot_size,
-                        direction=trade.direction,
-                        client=tl_client,
-                        instrument=instrument
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                    # Fallback to simplified calculation
-                    if trade.direction == 'BUY':
-                        pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-                    else:
-                        pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+                    # LAST RESORT: Use 0.0 if still unavailable
+                    if pnl is None:
+                        logger.error(f"[{account_key}] Could not determine PnL, using 0.0")
+                        pnl = 0.0
+                
+                # Get exit price for history
+                try:
+                    market_price = await tl_client.get_market_price(trade.symbol)
+                    exit_price = market_price if market_price else trade.entry_price
+                except Exception:
+                    exit_price = trade.entry_price
                 
                 # Determine outcome
                 if pnl > 0:

@@ -211,37 +211,27 @@ async def force_close_all_positions(
                         
                         logger.info(f"[{account.account_key}] Exit price source: {price_source}, price: {exit_price}")
                         
-                        # Get PnL from position (unrealizedPl field) instead of calculating
-                        pnl = None
-                        try:
-                            # Try to get unrealizedPl from the position before closing
-                            positions = await client['client'].get_all_positions()
-                            position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
-                            if position:
-                                pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
-                                logger.info(f"[{account.account_key}] Using unrealizedPl from position: ${pnl:.2f}")
-                        except Exception as e:
-                            logger.warning(f"[{account.account_key}] Could not fetch unrealizedPl: {e}")
+                        # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+                        pnl = trade.current_pnl
                         
-                        # Fallback: Calculate PnL if unrealizedPl not available
-                        if pnl is None:
+                        if pnl is not None:
+                            logger.info(f"[{account.account_key}] Using saved current_pnl: ${pnl:.2f}")
+                        else:
+                            # FALLBACK: Try to get unrealizedPl from the position in real-time
+                            logger.warning(f"[{account.account_key}] No saved PnL, fetching from TradeLocker...")
                             try:
-                                pnl = await calculate_usd_pnl(
-                                    symbol=trade.symbol,
-                                    entry_price=trade.entry_price,
-                                    exit_price=exit_price,
-                                    lot_size=trade.lot_size,
-                                    direction=trade.direction,
-                                    client=client['client'],
-                                    instrument=None
-                                )
-                                logger.info(f"[{account.account_key}] Calculated PnL fallback: ${pnl:.2f}")
+                                positions = await client['client'].get_all_positions()
+                                position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
+                                if position:
+                                    pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
+                                    logger.info(f"[{account.account_key}] Fetched unrealizedPl from position: ${pnl:.2f}")
                             except Exception as e:
-                                logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
-                                # Last resort fallback
-                                pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
-                                pnl = pips * trade.lot_size * 100000
-                                logger.warning(f"[{account.account_key}] Using simple pip calculation: ${pnl:.2f}")
+                                logger.warning(f"[{account.account_key}] Could not fetch unrealizedPl: {e}")
+                            
+                            # LAST RESORT: Use 0.0 if still unavailable
+                            if pnl is None:
+                                logger.error(f"[{account.account_key}] Could not determine PnL, using 0.0")
+                                pnl = 0.0
                         
                         outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                         
@@ -339,37 +329,27 @@ async def force_close_account_positions(
                     
                     logger.info(f"[{account_key}] Exit price source: {price_source}, price: {exit_price}")
                     
-                    # Get PnL from position (unrealizedPl field) instead of calculating
-                    pnl = None
-                    try:
-                        # Try to get unrealizedPl from the position before closing
-                        positions = await client['client'].get_all_positions()
-                        position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
-                        if position:
-                            pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
-                            logger.info(f"[{account_key}] Using unrealizedPl from position: ${pnl:.2f}")
-                    except Exception as e:
-                        logger.warning(f"[{account_key}] Could not fetch unrealizedPl: {e}")
+                    # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+                    pnl = trade.current_pnl
                     
-                    # Fallback: Calculate PnL if unrealizedPl not available
-                    if pnl is None:
+                    if pnl is not None:
+                        logger.info(f"[{account_key}] Using saved current_pnl: ${pnl:.2f}")
+                    else:
+                        # FALLBACK: Try to get unrealizedPl from the position in real-time
+                        logger.warning(f"[{account_key}] No saved PnL, fetching from TradeLocker...")
                         try:
-                            pnl = await calculate_usd_pnl(
-                                symbol=trade.symbol,
-                                entry_price=trade.entry_price,
-                                exit_price=exit_price,
-                                lot_size=trade.lot_size,
-                                direction=trade.direction,
-                                client=client['client'],
-                                instrument=None
-                            )
-                            logger.info(f"[{account_key}] Calculated PnL fallback: ${pnl:.2f}")
+                            positions = await client['client'].get_all_positions()
+                            position = next((p for p in positions if str(p.get('id')) == str(trade.tl_position_id)), None)
+                            if position:
+                                pnl = float(position.get('unrealizedPl', 0) or position.get('profit', 0) or position.get('pnl', 0))
+                                logger.info(f"[{account_key}] Fetched unrealizedPl from position: ${pnl:.2f}")
                         except Exception as e:
-                            logger.error(f"PnL calculation failed for {trade.symbol}: {e}")
-                            # Last resort fallback
-                            pips = (exit_price - trade.entry_price) if trade.direction == 'BUY' else (trade.entry_price - exit_price)
-                            pnl = pips * trade.lot_size * 100000
-                            logger.warning(f"[{account_key}] Using simple pip calculation: ${pnl:.2f}")
+                            logger.warning(f"[{account_key}] Could not fetch unrealizedPl: {e}")
+                        
+                        # LAST RESORT: Use 0.0 if still unavailable
+                        if pnl is None:
+                            logger.error(f"[{account_key}] Could not determine PnL, using 0.0")
+                            pnl = 0.0
                     
                     outcome = 'WIN' if pnl > 0 else ('LOSS' if pnl < 0 else 'BE')
                     

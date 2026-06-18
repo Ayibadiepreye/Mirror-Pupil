@@ -157,7 +157,7 @@ class BillirichyAutonomousManager:
             )
             
             # Update database
-            await self.db.update_trade(trade.trade_id, tp=auto_tp)
+            await self.db.update_trade_tp(trade.trade_id, auto_tp)
             
             logger.info(
                 f"[AUTO-TP] {trade.signal_id} ({trade.symbol}): "
@@ -182,7 +182,7 @@ class BillirichyAutonomousManager:
             )
             
             # Update database
-            await self.db.update_trade(trade.trade_id, sl=trade.entry_price)
+            await self.db.update_trade_sl(trade.trade_id, trade.entry_price)
             
             logger.info(
                 f"[AUTO-BE] {trade.signal_id} ({trade.symbol}): "
@@ -213,7 +213,7 @@ class BillirichyAutonomousManager:
             
             # Update database
             new_lot_size = round(trade.lot_size - qty, 2)
-            await self.db.update_trade(trade.trade_id, lot_size=new_lot_size)
+            await self.db.update_trade_lot_size(trade.trade_id, new_lot_size)
             
             logger.info(
                 f"[AUTO-PARTIAL] {trade.signal_id} ({trade.symbol}): "
@@ -231,62 +231,42 @@ class BillirichyAutonomousManager:
             if not tl_client:
                 return
             
-            # Close full position
-            await tl_client.close_position(int(trade.tl_position_id))
+            # PRIMARY: Use last saved current_pnl from database (updated every 15 seconds)
+            pnl = trade.current_pnl
             
-            # Get actual exit price from closed position
-            try:
-                # Get all positions and find this one
-                all_positions = await tl_client.get_all_positions()
-                position_info = next(
-                    (p for p in all_positions if p.get('id') == trade.tl_position_id),
-                    None
-                )
+            if pnl is not None:
+                logger.info(f"[{trade.account_key}] Using saved current_pnl: ${pnl:.2f}")
+            else:
+                # FALLBACK: Fetch unrealizedPl from TradeLocker position in real-time
+                logger.warning(f"[{trade.account_key}] No saved PnL, fetching from TradeLocker...")
+                if trade.tl_position_id:
+                    try:
+                        all_positions = await tl_client.get_all_positions()
+                        position = next(
+                            (p for p in all_positions if str(p.get('positionId') or p.get('id')) == str(trade.tl_position_id)),
+                            None
+                        )
+                        if position:
+                            pnl = position.get('unrealizedPl') or position.get('profit') or position.get('pnl')
+                            if pnl is not None:
+                                logger.info(f"[{trade.account_key}] Fetched TradeLocker unrealizedPl: ${pnl:.2f}")
+                    except Exception as e:
+                        logger.warning(f"[{trade.account_key}] Failed to fetch unrealizedPl: {e}")
                 
-                if position_info:
-                    exit_price = float(position_info.get('closePrice', trade.entry_price))
-                else:
-                    # Position already closed, use market price
-                    raise ValueError("Position already closed")
+                # LAST RESORT: Use 0.0 if still unavailable
+                if pnl is None:
+                    logger.error(f"[{trade.account_key}] Could not determine PnL, using 0.0")
+                    pnl = 0.0
+            
+            # Get exit price for history record
+            try:
+                market_price = await tl_client.get_market_price(trade.symbol)
+                exit_price = market_price if market_price else trade.entry_price
             except Exception:
-                # Fallback: get current market price
-                try:
-                    # Use existing get_market_price method
-                    market_price = await tl_client.get_market_price(trade.symbol)
-                    if market_price:
-                        exit_price = market_price
-                    else:
-                        exit_price = trade.entry_price
-                except Exception:
-                    exit_price = trade.entry_price  # Last resort fallback
+                exit_price = trade.entry_price
             
-            # Calculate P&L in USD using proper conversion
-            try:
-                # Get instrument details for accurate calculation
-                instruments = await tl_client.get_all_instruments()
-                instrument = next(
-                    (i for i in instruments if trade.symbol in i.get('name', '')),
-                    None
-                )
-                
-                # Use the proper USD P&L calculation function
-                from ...risk.calculator import calculate_usd_pnl
-                pnl = await calculate_usd_pnl(
-                    symbol=trade.symbol,
-                    entry_price=trade.entry_price,
-                    exit_price=exit_price,
-                    lot_size=trade.lot_size,
-                    direction=trade.direction,
-                    client=tl_client,
-                    instrument=instrument
-                )
-            except Exception as e:
-                logger.error(f"Failed to calculate USD P&L, using fallback: {e}")
-                # Fallback to simplified calculation
-                if trade.direction == 'BUY':
-                    pnl = (exit_price - trade.entry_price) * trade.lot_size * 100000
-                else:
-                    pnl = (trade.entry_price - exit_price) * trade.lot_size * 100000
+            # Close full position on TradeLocker
+            await tl_client.close_position(int(trade.tl_position_id))
             
             # Determine outcome
             if pnl > 0:
