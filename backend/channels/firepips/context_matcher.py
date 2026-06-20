@@ -162,6 +162,204 @@ class FirepipsContextMatcher:
         )
         return []
     
+    async def match_trades_with_chain(
+        self,
+        message,
+        symbol: Optional[str],
+        direction: Optional[str],
+        text: str,
+        account_key: str,
+        telegram_client = None,
+        action: str = None
+    ) -> List[ActiveTrade]:
+        """
+        Match trades with reply chain traversal.
+        
+        Chain logic:
+        1. Check current message for context (symbol/direction)
+        2. If insufficient, follow reply chain backwards
+        3. Accumulate context from each message in chain
+        4. Stop when sufficient context found OR reach original message
+        
+        Args:
+            message: Full Telegram message object
+            symbol: Symbol extracted from current message
+            direction: Direction extracted from current message
+            text: Current message text
+            account_key: Account to match trades for
+            telegram_client: Telegram client for fetching messages
+            action: Management action type
+        
+        Returns:
+            List of matching ActiveTrade objects
+        """
+        reply_to_msg_id = getattr(message, 'reply_to_message_id', None)
+        
+        # Try matching with current context
+        matches = await self.match_trades(
+            reply_to_msg_id=reply_to_msg_id,
+            symbol=symbol,
+            direction=direction,
+            text=text,
+            account_key=account_key,
+            action=action
+        )
+        
+        if matches:
+            logger.info(f"[Context] Matched {len(matches)} trade(s) from current message")
+            return matches
+        
+        # If no matches and we have a reply, walk the chain
+        if reply_to_msg_id and telegram_client:
+            logger.info(f"[Context] No direct match, traversing reply chain from msg {reply_to_msg_id}")
+            
+            chain_context = await self._walk_reply_chain(
+                telegram_client=telegram_client,
+                channel_id=self.channel_id,
+                starting_msg_id=reply_to_msg_id,
+                max_depth=10
+            )
+            
+            # Merge context from chain
+            if chain_context['symbol'] and not symbol:
+                symbol = chain_context['symbol']
+                logger.info(f"[Context] Found symbol in chain: {symbol}")
+            
+            if chain_context['direction'] and not direction:
+                direction = chain_context['direction']
+                logger.info(f"[Context] Found direction in chain: {direction}")
+            
+            if chain_context['reply_to_original']:
+                reply_to_msg_id = chain_context['reply_to_original']
+                logger.info(f"[Context] Found original msg_id in chain: {reply_to_msg_id}")
+            
+            # Try matching again with enriched context
+            matches = await self.match_trades(
+                reply_to_msg_id=reply_to_msg_id,
+                symbol=symbol,
+                direction=direction,
+                text=text,
+                account_key=account_key,
+                action=action
+            )
+            
+            if matches:
+                logger.info(f"[Context] ✓ Matched {len(matches)} trade(s) using reply chain context")
+                return matches
+        
+        # No matches found
+        logger.warning(f"[Context] Reply chain exhausted, no matches found")
+        return []
+    
+    async def _walk_reply_chain(
+        self,
+        telegram_client,
+        channel_id: int,
+        starting_msg_id: int,
+        max_depth: int
+    ) -> dict:
+        """
+        Walk backwards through reply chain, extracting context.
+        
+        Returns:
+            {
+                'symbol': extracted symbol or None,
+                'direction': extracted direction or None,
+                'reply_to_original': original message ID or None
+            }
+        """
+        accumulated_context = {
+            'symbol': None,
+            'direction': None,
+            'reply_to_original': None
+        }
+        
+        current_msg_id = starting_msg_id
+        depth = 0
+        
+        while current_msg_id and depth < max_depth:
+            try:
+                # Fetch the message from Telegram
+                msg = await telegram_client.get_message(channel_id, current_msg_id)
+                
+                if not msg:
+                    logger.debug(f"[Chain] Could not fetch msg {current_msg_id}")
+                    break
+                
+                # Extract text from message
+                msg_text = self._extract_text_from_message(msg)
+                
+                if msg_text:
+                    # Try to extract symbol if we don't have it yet
+                    if not accumulated_context['symbol']:
+                        from .entry import detect_symbol
+                        symbol = detect_symbol(msg_text)
+                        if symbol:
+                            accumulated_context['symbol'] = symbol
+                            logger.debug(f"[Chain] Found symbol at depth {depth}: {symbol}")
+                    
+                    # Try to extract direction if we don't have it yet
+                    if not accumulated_context['direction']:
+                        from .entry import detect_direction
+                        direction = detect_direction(msg_text)
+                        if direction:
+                            accumulated_context['direction'] = direction
+                            logger.debug(f"[Chain] Found direction at depth {depth}: {direction}")
+                    
+                    # Check if this message is a trade signal (has SL/TP)
+                    if self._looks_like_trade_signal(msg_text):
+                        accumulated_context['reply_to_original'] = current_msg_id
+                        logger.info(f"[Chain] Found original trade signal at msg {current_msg_id}")
+                        break
+                
+                # Move to parent reply
+                parent_reply_id = getattr(msg, 'reply_to_message_id', None)
+                
+                if not parent_reply_id:
+                    # Reached a message with no parent - this is the original
+                    accumulated_context['reply_to_original'] = current_msg_id
+                    logger.debug(f"[Chain] Reached end of chain at msg {current_msg_id}")
+                    break
+                
+                current_msg_id = parent_reply_id
+                depth += 1
+                
+            except Exception as e:
+                logger.error(f"[Chain] Error traversing reply chain: {e}")
+                break
+        
+        logger.info(
+            f"[Chain] Traversal complete (depth={depth}): "
+            f"symbol={accumulated_context['symbol']} "
+            f"direction={accumulated_context['direction']} "
+            f"original_msg={accumulated_context['reply_to_original']}"
+        )
+        
+        return accumulated_context
+    
+    def _looks_like_trade_signal(self, text: str) -> bool:
+        """Check if text looks like an entry signal (has SL or TP)."""
+        text_lower = text.lower()
+        has_sl = bool(re.search(
+            r'\b(?:sl|s\.l|s/l|stop\s*loss|stoploss|stop-loss)\b',
+            text_lower
+        ))
+        has_tp = bool(re.search(
+            r'\b(?:tp|t\.p|t/p|take\s*profit|takeprofit|take-profit|target)\b',
+            text_lower
+        ))
+        return has_sl or has_tp
+    
+    def _extract_text_from_message(self, message) -> str:
+        """Extract text from Telegram message object."""
+        text = ""
+        if hasattr(message, 'content') and hasattr(message.content, 'text'):
+            if hasattr(message.content.text, 'text'):
+                text = message.content.text.text
+            else:
+                text = str(message.content.text)
+        return text
+    
     def _extract_prices(self, text: str) -> List[float]:
         """Extract all price-like numbers from text."""
         prices = []

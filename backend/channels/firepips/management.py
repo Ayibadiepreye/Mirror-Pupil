@@ -37,7 +37,11 @@ MODIFY_SL_RE = re.compile(
     r'\bTIGHTEN STOP LOSS TO\s+([\d.]+)\b|'
     r'\bADJUST STOP LOSS TO\s+([\d.]+)\b|'
     r'\bNEW SL:\s*([\d.]+)\b|'
-    r'\bMOVE SL TO\s+([\d.]+)\b',
+    r'\bMOVE SL TO\s+([\d.]+)\b|'
+    r'\bmove\s+(?:sl|s\.l|s/l|stop\s*loss|stoploss|stop-loss|stop)\s+to\s+([\d.]+)\b|'
+    r'\badjust\s+(?:sl|s\.l|s/l|stop\s*loss|stoploss|stop-loss|stop)\s+to\s+([\d.]+)\b|'
+    r'\bnew\s+(?:sl|s\.l|s/l|stop\s*loss|stoploss|stop-loss|stop)\s*:?\s*([\d.]+)\b|'
+    r'\b(?:sl|s\.l|s/l|stop)\s*[=:]\s*([\d.]+)\b',
     re.IGNORECASE
 )
 
@@ -45,13 +49,21 @@ MODIFY_TP_RE = re.compile(
     r'\bTP:\s*([\d.]+)\b|'
     r'\bTAKE PROFIT:\s*([\d.]+)\b|'
     r'\bNEW TP:\s*([\d.]+)\b|'
-    r'\bMOVE TP TO\s+([\d.]+)\b',
+    r'\bMOVE TP TO\s+([\d.]+)\b|'
+    r'\bmove\s+(?:tp|t\.p|t/p|take\s*profit|takeprofit|take-profit|target)\s+to\s+([\d.]+)\b|'
+    r'\bnew\s+(?:tp|t\.p|t/p|take\s*profit|takeprofit|take-profit|target)\s*:?\s*([\d.]+)\b|'
+    r'\b(?:tp|t\.p|t/p|target)\s*[=:]\s*([\d.]+)\b',
     re.IGNORECASE
 )
 
 BREAKEVEN_RE = re.compile(
     r'\bBREAKEVEN\b|\bBREAK EVEN\b|\bBE\b|'
-    r'\bMOVE TO BE\b|\bSET BE\b',
+    r'\bMOVE TO BE\b|\bSET BE\b|'
+    r'\bmove\s+(?:sl|s\.l|s/l|stop\s*loss|stoploss|stop-loss|stop)\s+to\s+(?:entry|be|breakeven|break\s*-?\s*even)\b|'
+    r'\bsl\s+to\s+entry\b|'
+    r'\bstop\s+to\s+entry\b|'
+    r'\block\s+profit\b|'
+    r'\bsecure\s+profits?\b',
     re.IGNORECASE
 )
 
@@ -174,7 +186,11 @@ async def parse_management_action(
         for group in match.groups():
             if group:
                 try:
-                    new_sl = float(group)
+                    # If contains slash, take first value
+                    sl_val = group
+                    if '/' in sl_val:
+                        sl_val = sl_val.split('/')[0].strip()
+                    new_sl = float(sl_val)
                     break
                 except ValueError:
                     continue
@@ -201,7 +217,11 @@ async def parse_management_action(
         for group in match.groups():
             if group:
                 try:
-                    new_tp = float(group)
+                    # If contains slash, take first value
+                    tp_val = group
+                    if '/' in tp_val:
+                        tp_val = tp_val.split('/')[0].strip()
+                    new_tp = float(tp_val)
                     break
                 except ValueError:
                     continue

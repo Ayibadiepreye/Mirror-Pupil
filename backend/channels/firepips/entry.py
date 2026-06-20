@@ -23,12 +23,12 @@ DIRECTION_MAP = {
 }
 
 SL_RE = re.compile(
-    r'\bsl\s*[:\-;]?\s*([\d.]+)',
+    r'\b(?:sl|s\.l|s/l|s\s+l|stop\s*loss|stoploss|stop-loss|stop)\s*[:\-;.]?\s*([\d.]+)',
     re.IGNORECASE
 )
 
 TP_RE = re.compile(
-    r'\btp\s*[:\-;]?\s*([\d.]+)',
+    r'\b(?:tp|t\.p|t/p|t\s+p|take\s*profit|takeprofit|take-profit|target)\s*[:\-;.]?\s*([\d.]+)',
     re.IGNORECASE
 )
 
@@ -73,25 +73,61 @@ def detect_symbol(text: str) -> Optional[str]:
 
 
 def extract_sl(text: str) -> Optional[float]:
-    """Extract stop loss from text."""
+    """
+    Extract stop loss from text.
+    If slash-separated (e.g., "sl: 2640/2638"), pick FIRST value only.
+    """
     match = SL_RE.search(text)
     if match:
         try:
-            return float(match.group(1))
+            sl_val = match.group(1)
+            # If contains slash, take first value
+            if '/' in sl_val:
+                sl_val = sl_val.split('/')[0].strip()
+            return float(sl_val)
         except ValueError:
             pass
     return None
 
 
 def extract_tps(text: str) -> List[float]:
-    """Extract all take profit levels from text."""
+    """
+    Extract all take profit levels from text.
+    Handles:
+    - Multiple TPs: "tp 100" "tp 105"
+    - Slash-separated: "tp: 100/105/110" or "tp 100/105"
+    """
     tps = []
+    
+    # First, check for slash-separated format after TP keyword
+    slash_pattern = re.compile(
+        r'\b(?:tp|t\.p|t/p|take\s*profit|takeprofit|take-profit|target)\s*[:\-;.]?\s*([\d.]+(?:/[\d.]+)+)',
+        re.IGNORECASE
+    )
+    
+    match = slash_pattern.search(text)
+    if match:
+        # Split by slash and extract all TPs
+        tp_string = match.group(1)
+        for tp_val in tp_string.split('/'):
+            try:
+                tp = float(tp_val.strip())
+                tps.append(tp)
+            except ValueError:
+                continue
+        
+        if tps:
+            logger.info(f"[Firepips] Detected multi-TP (slash-separated): {tps}")
+            return tps
+    
+    # Fallback: Original individual TP extraction
     for match in TP_RE.finditer(text):
         try:
             tp = float(match.group(1))
             tps.append(tp)
         except ValueError:
             continue
+    
     return tps
 
 
