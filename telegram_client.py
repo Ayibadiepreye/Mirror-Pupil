@@ -212,6 +212,32 @@ class HumanLikeTelegramClient:
         except Exception as e:
             logger.warning(f"Failed to send typing indicator: {e}")
     
+    async def get_message(self, chat_id: int, message_id: int):
+        """
+        Fetch a specific message by ID from a chat.
+        Used for reply chain traversal to find context.
+        
+        Args:
+            chat_id: The chat/channel ID
+            message_id: The message ID to fetch
+        
+        Returns:
+            Message object or None if not found
+        """
+        if not self.client:
+            logger.warning("Cannot get message: client not initialized")
+            return None
+        
+        try:
+            result = await self.client.getMessage(
+                chat_id=chat_id,
+                message_id=message_id
+            )
+            return result
+        except Exception as e:
+            logger.debug(f"Could not fetch message {message_id} from chat {chat_id}: {e}")
+            return None
+    
     async def _health_check_loop(self):
         """
         Periodic health check to verify connection is alive.

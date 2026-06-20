@@ -103,6 +103,7 @@ class ChannelPlugin(ABC):
         self.display_name = display_name
         self._waiting_room: dict = {}  # {(symbol, direction): BareSignal}
         self._trade_executor = None  # Will be injected by registry
+        self._telegram_client = None  # Will be injected by registry for reply chain traversal
     
     @property
     @abstractmethod

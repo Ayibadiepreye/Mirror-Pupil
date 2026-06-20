@@ -1301,10 +1301,10 @@ class TradeExecutor:
                 )
                 return {"trade_id": trade.trade_id, "status": "success", "action": "modify_tp", "new_tp": new_tp}
             
-            # COMPOUND (Close 33% + Breakeven)
+            # COMPOUND (Close 50% + Breakeven)
             elif action == 'COMPOUND':
-                # Close 33%
-                qty_to_close = round(trade.lot_size * 0.33, 2)
+                # Close 50%
+                qty_to_close = round(trade.lot_size * 0.50, 2)
                 await client.close_position(
                     position_id=int(trade.tl_position_id),
                     quantity=qty_to_close
@@ -1320,7 +1320,7 @@ class TradeExecutor:
                 await self.db.update_trade_sl(trade.trade_id, trade.entry_price)
                 
                 logger.info(
-                    f"[{account_key}] ✓ COMPOUND: {trade.symbol} closed 33% ({qty_to_close} lots) + BE"
+                    f"[{account_key}] ✓ COMPOUND: {trade.symbol} closed 50% ({qty_to_close} lots) + BE"
                 )
                 return {
                     "trade_id": trade.trade_id,

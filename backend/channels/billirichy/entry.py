@@ -24,12 +24,12 @@ ENTRY_RE = re.compile(
 )
 
 SL_RE = re.compile(
-    r'\b(?:sl|stop\s*loss|stoploss)\s*[:\-.]?\s*([\d.]+)',
+    r'\b(?:sl|s\.l|s/l|s\s+l|stop\s*loss|stoploss|stop-loss|stop)\s*[:\-.]?\s*([\d.]+)',
     re.IGNORECASE
 )
 
 TP_RE = re.compile(
-    r'\b(?:tp\d*|take\s*profit|takeprofit)\s*[:\-.]?\s*([\d.]+)',
+    r'\b(?:tp\d*|t\.p\d*|t/p\d*|t\s+p\d*|take\s*profit|takeprofit|take-profit|target\d*)\s*[:\-.]?\s*([\d.]+)',
     re.IGNORECASE
 )
 
@@ -39,7 +39,8 @@ STOP_ORDER_RE = re.compile(r'\bstop\s*order\b|\bstop\s*entry\b', re.IGNORECASE)
 # Re-entry keywords
 REENTRY_KEYWORDS = [
     'add more', 'second entry', 're-enter', 'reenter',
-    'stack', 'add', 'another entry', 'more buys', 'more sells'
+    'stack', 'add', 'another entry', 'more buys', 'more sells',
+    'another', 'more entries'
 ]
 
 
@@ -80,39 +81,86 @@ def is_reentry(text: str) -> bool:
 
 
 def extract_entry_price(text: str) -> Optional[float]:
-    """Extract entry price from text."""
+    """
+    Extract entry price from text.
+    If slash-separated (e.g., "entry: 2650/2660"), pick FIRST value only.
+    """
     match = ENTRY_RE.search(text)
     if match:
         # Try each capture group
         for group in match.groups():
             if group:
-                try:
-                    return float(group)
-                except ValueError:
-                    continue
+                # If contains slash, take first value
+                if '/' in group:
+                    first_val = group.split('/')[0].strip()
+                    try:
+                        return float(first_val)
+                    except ValueError:
+                        continue
+                else:
+                    try:
+                        return float(group)
+                    except ValueError:
+                        continue
     return None
 
 
 def extract_sl(text: str) -> Optional[float]:
-    """Extract stop loss from text."""
+    """
+    Extract stop loss from text.
+    If slash-separated (e.g., "sl: 2640/2638"), pick FIRST value only.
+    """
     match = SL_RE.search(text)
     if match:
         try:
-            return float(match.group(1))
+            sl_val = match.group(1)
+            # If contains slash, take first value
+            if '/' in sl_val:
+                sl_val = sl_val.split('/')[0].strip()
+            return float(sl_val)
         except ValueError:
             pass
     return None
 
 
 def extract_tps(text: str) -> List[float]:
-    """Extract all take profit levels from text."""
+    """
+    Extract all take profit levels from text.
+    Handles:
+    - Multiple TPs: "tp 2680" "tp2 2690"
+    - Slash-separated: "tp: 4584/4583.4" or "tp 2650/2660/2670"
+    """
     tps = []
+    
+    # First, check for slash-separated format after TP keyword
+    slash_pattern = re.compile(
+        r'\b(?:tp\d*|t\.p\d*|t/p\d*|take\s*profit|takeprofit|take-profit|target\d*)\s*[:\-.]?\s*([\d.]+(?:/[\d.]+)+)',
+        re.IGNORECASE
+    )
+    
+    match = slash_pattern.search(text)
+    if match:
+        # Split by slash and extract all TPs
+        tp_string = match.group(1)
+        for tp_val in tp_string.split('/'):
+            try:
+                tp = float(tp_val.strip())
+                tps.append(tp)
+            except ValueError:
+                continue
+        
+        if tps:
+            logger.info(f"[Entry] Detected multi-TP (slash-separated): {tps}")
+            return tps
+    
+    # Fallback: Original individual TP extraction
     for match in TP_RE.finditer(text):
         try:
             tp = float(match.group(1))
             tps.append(tp)
         except ValueError:
             continue
+    
     return tps
 
 

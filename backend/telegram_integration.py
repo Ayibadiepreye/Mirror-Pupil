@@ -81,6 +81,9 @@ class TelegramIntegration:
             # Initialize registry with database (loads channels dynamically)
             await registry.initialize(db)
             
+            # Inject telegram client into plugins for reply chain traversal
+            registry.inject_telegram_client(self.client)
+            
             # Register handlers for each loaded channel
             for channel_id in registry.get_channel_ids():
                 handler = self._create_handler(channel_id, registry)

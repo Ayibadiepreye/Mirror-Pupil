@@ -129,11 +129,18 @@ SYMBOL_MAP = {
     'audjpy': 'AUDJPY',
     'aud/jpy': 'AUDJPY',
     'aud jpy': 'AUDJPY',
+    
+    # Bitcoin
+    'btc': 'BTCUSD',
+    'btcusd': 'BTCUSD',
+    'bitcoin': 'BTCUSD',
+    'btc/usd': 'BTCUSD',
+    'btc usd': 'BTCUSD',
 }
 
-# Excluded symbols (crypto, synthetics, etc.)
+# Excluded symbols (crypto except BTC, synthetics, etc.)
 EXCLUDED = {
-    'btc', 'bitcoin', 'eth', 'ethereum', 'bnb', 'sol', 'solana',
+    'eth', 'ethereum', 'bnb', 'sol', 'solana',
     'volatility', 'vix', 'step index', 'boom', 'crash',
     'crypto', 'usdt', 'usdc', 'busd'
 }

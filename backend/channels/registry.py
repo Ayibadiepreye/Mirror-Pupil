@@ -105,6 +105,15 @@ class ChannelRegistry:
             plugin._trade_executor = trade_executor
         logger.info(f"✓ Injected TradeExecutor into {len(self._plugins)} plugin(s)")
     
+    def inject_telegram_client(self, telegram_client):
+        """
+        Inject Telegram client into all plugins for reply chain traversal.
+        Must be called after Telegram client is initialized.
+        """
+        for plugin in self._plugins.values():
+            plugin._telegram_client = telegram_client
+        logger.info(f"✓ Injected Telegram client into {len(self._plugins)} plugin(s)")
+    
     def get_plugin(self, channel_id: int) -> Optional[ChannelPlugin]:
         """
         Get plugin for a specific channel ID.
