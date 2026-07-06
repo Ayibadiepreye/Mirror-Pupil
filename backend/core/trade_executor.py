@@ -336,6 +336,16 @@ class TradeExecutor:
         if not account_db:
             raise Exception(f"Account not found in database: {account_key}")
         
+        # CRITICAL: Check if account is frozen due to profit cap
+        if account_db.profit_cap_frozen:
+            logger.warning(
+                f"[{account_key}] Trade rejected: Account frozen due to profit cap breach"
+            )
+            return {
+                "status": "rejected",
+                "reason": "Account frozen due to profit cap breach. Unfreeze account to resume trading."
+            }
+        
         # Send signal received notification
         if self.notification_service:
             channel = await self.db.get_channel(channel_id)

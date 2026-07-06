@@ -30,6 +30,7 @@ class RiskEnforcer:
         self.calculator = get_risk_calculator()
         self.notification_service = None  # Lazy-loaded to avoid circular import
         self.breach_check_task: Optional[asyncio.Task] = None
+        self.profit_cap_check_task: Optional[asyncio.Task] = None
         
         logger.info("Initialized RiskEnforcer")
     
@@ -47,7 +48,9 @@ class RiskEnforcer:
             return
         
         self.breach_check_task = asyncio.create_task(self._breach_monitoring_loop())
+        self.profit_cap_check_task = asyncio.create_task(self._profit_cap_monitoring_loop())
         logger.info("✓ Started breach monitoring (60s interval)")
+        logger.info("✓ Started profit cap monitoring (10s interval)")
     
     async def stop_breach_monitoring(self):
         """Stop background breach monitoring task."""
@@ -58,6 +61,14 @@ class RiskEnforcer:
             except asyncio.CancelledError:
                 pass
             logger.info("✓ Stopped breach monitoring")
+        
+        if self.profit_cap_check_task:
+            self.profit_cap_check_task.cancel()
+            try:
+                await self.profit_cap_check_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("✓ Stopped profit cap monitoring")
     
     async def _breach_monitoring_loop(self):
         """Background task that checks all accounts for breaches every 60 seconds."""
@@ -94,6 +105,153 @@ class RiskEnforcer:
                 break
             except Exception as e:
                 logger.error(f"Breach monitoring error: {e}")
+    
+    async def _profit_cap_monitoring_loop(self):
+        """
+        Background task that checks all accounts for profit cap breaches every 10 seconds.
+        Faster than breach monitoring for tighter control over profit caps.
+        """
+        while True:
+            try:
+                await asyncio.sleep(10)  # Check every 10 seconds
+                
+                accounts = await self.db.get_all_accounts()
+                
+                for account in accounts:
+                    # Skip if account is paused, breached, or already frozen
+                    if account.paused or account.breached or account.profit_cap_frozen:
+                        continue
+                    
+                    # Skip if profit cap not enabled
+                    if not account.profit_cap_enabled:
+                        continue
+                    
+                    # Skip if required fields missing
+                    if not account.initial_balance or account.initial_balance <= 0:
+                        logger.warning(
+                            f"[{account.account_key}] Profit cap enabled but initial_balance "
+                            f"is invalid: {account.initial_balance}"
+                        )
+                        continue
+                    
+                    if not account.profit_cap_type or not account.profit_cap_value:
+                        logger.warning(
+                            f"[{account.account_key}] Profit cap enabled but type/value missing"
+                        )
+                        continue
+                    
+                    # Get TradeLocker client for this account
+                    from ..core.account_manager import get_account_manager
+                    account_manager = get_account_manager()
+                    client_data = account_manager.get_account(account.account_key)
+                    tl_client = client_data['client'] if client_data else None
+                    
+                    # Check profit cap
+                    await self._check_profit_cap(account, tl_client)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Profit cap monitoring error: {e}")
+    
+    async def _check_profit_cap(self, account: Account, tl_client) -> bool:
+        """
+        Check if account has breached profit cap.
+        
+        Algorithm:
+        1. Get current equity from TradeLocker (current_balance)
+        2. Get all active trades and sum their current_pnl
+        3. Calculate total_value = current_equity + sum(open_pnl)
+        4. Calculate cap_threshold based on cap_type:
+           - percentage: initial_balance * (1 + cap_value/100)
+           - dollar: initial_balance + cap_value
+        5. Apply safety buffer: buffered_threshold = cap_threshold * (1 - buffer_pct/100)
+        6. If total_value >= buffered_threshold: TRIGGER BREACH
+        
+        Args:
+            account: Account to check
+            tl_client: TradeLocker client (optional, for fetching live balance)
+        
+        Returns:
+            True if breached, False otherwise
+        """
+        try:
+            # Step 1: Get current equity from TradeLocker
+            current_equity = await self._get_account_equity(
+                account.account_key, tl_client
+            ) if tl_client else (account.current_balance or 0.0)
+            
+            # Step 2: Get all active trades and sum current_pnl
+            active_trades = await self.db.get_active_trades(account.account_key)
+            open_pnl = sum(
+                trade.current_pnl or 0.0 
+                for trade in active_trades 
+                if trade.status == 'filled'
+            )
+            
+            # Step 3: Calculate total value
+            total_value = current_equity + open_pnl
+            
+            # Step 4: Calculate cap threshold
+            if account.profit_cap_type == 'percentage':
+                cap_threshold = account.initial_balance * (1 + account.profit_cap_value / 100.0)
+            elif account.profit_cap_type == 'dollar':
+                cap_threshold = account.initial_balance + account.profit_cap_value
+            else:
+                logger.error(
+                    f"[{account.account_key}] Invalid profit_cap_type: {account.profit_cap_type}"
+                )
+                return False
+            
+            # Step 5: Apply safety buffer
+            buffer_pct = account.profit_cap_buffer_pct or 2.0
+            buffered_threshold = cap_threshold * (1 - buffer_pct / 100.0)
+            
+            # Step 6: Check if breached
+            if total_value >= buffered_threshold:
+                current_profit = total_value - account.initial_balance
+                cap_profit = cap_threshold - account.initial_balance
+                
+                logger.critical(
+                    f"[{account.account_key}] PROFIT CAP BREACHED: "
+                    f"Total Value ${total_value:.2f} (Balance: ${current_equity:.2f}, Open P&L: ${open_pnl:.2f}) "
+                    f"≥ Buffered Threshold ${buffered_threshold:.2f} "
+                    f"(Cap: ${cap_threshold:.2f}, Buffer: {buffer_pct}%) "
+                    f"| Current Profit: ${current_profit:.2f}, Cap: ${cap_profit:.2f}"
+                )
+                
+                # Mark as frozen
+                await self.db.set_account_profit_cap_frozen(account.account_key, True)
+                account.profit_cap_frozen = True
+                
+                # Send breach notification
+                await self._get_notification_service().risk_breach(
+                    account_key=account.account_key,
+                    breach_type="Profit Cap",
+                    current_value=current_profit,
+                    limit=cap_profit
+                )
+                
+                # Close all trades
+                await self._close_all_account_trades(account.account_key, "PROFIT_CAP_BREACH")
+                
+                return True
+            
+            # Debug log (only if close to cap - within 90%)
+            if total_value >= buffered_threshold * 0.9:
+                current_profit = total_value - account.initial_balance
+                cap_profit = cap_threshold - account.initial_balance
+                logger.debug(
+                    f"[{account.account_key}] Profit cap check: "
+                    f"${current_profit:.2f} / ${cap_profit:.2f} "
+                    f"({(current_profit / cap_profit * 100):.1f}% of cap)"
+                )
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"[{account.account_key}] Profit cap check failed: {e}")
+            return False
     
     async def _get_account_equity(self, account_key: str, client) -> float:
         """

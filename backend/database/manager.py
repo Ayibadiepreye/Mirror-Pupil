@@ -144,6 +144,28 @@ class DatabaseManager:
             except Exception as e:
                 logger.debug(f"Migration check: {e}")
             
+            # Migration: Add profit cap columns if they don't exist
+            try:
+                column_exists = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='accounts' 
+                    AND column_name='profit_cap_enabled'
+                """)
+                
+                if not column_exists:
+                    await conn.execute("""
+                        ALTER TABLE accounts 
+                        ADD COLUMN IF NOT EXISTS profit_cap_enabled BOOLEAN DEFAULT FALSE,
+                        ADD COLUMN IF NOT EXISTS profit_cap_type TEXT,
+                        ADD COLUMN IF NOT EXISTS profit_cap_value REAL,
+                        ADD COLUMN IF NOT EXISTS profit_cap_buffer_pct REAL DEFAULT 2.0,
+                        ADD COLUMN IF NOT EXISTS profit_cap_frozen BOOLEAN DEFAULT FALSE
+                    """)
+                    logger.info("✓ Added profit cap columns to accounts table")
+            except Exception as e:
+                logger.debug(f"Profit cap migration check: {e}")
+            
             # Insert initial data
             await conn.execute(INITIAL_DATA)
             
@@ -1197,6 +1219,91 @@ class DatabaseManager:
                 return True
         except Exception as e:
             logger.error(f"Failed to update max concurrent for {account_key}: {e}")
+            return False
+    
+    async def update_account_profit_cap(
+        self,
+        account_key: str,
+        enabled: bool,
+        cap_type: Optional[str] = None,
+        cap_value: Optional[float] = None,
+        buffer_pct: Optional[float] = None
+    ) -> bool:
+        """
+        Update profit cap settings for an account.
+        
+        Args:
+            account_key: Account identifier
+            enabled: Enable/disable profit cap
+            cap_type: 'percentage' or 'dollar'
+            cap_value: Cap value (percentage or dollar amount)
+            buffer_pct: Safety buffer percentage (default 2.0)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Build update fields
+                update_fields = {"profit_cap_enabled": enabled}
+                
+                if cap_type is not None:
+                    update_fields["profit_cap_type"] = cap_type
+                if cap_value is not None:
+                    update_fields["profit_cap_value"] = cap_value
+                if buffer_pct is not None:
+                    update_fields["profit_cap_buffer_pct"] = buffer_pct
+                
+                # Build dynamic query
+                set_clauses = []
+                values = []
+                param_num = 1
+                
+                for field, value in update_fields.items():
+                    set_clauses.append(f"{field} = ${param_num}")
+                    values.append(value)
+                    param_num += 1
+                
+                values.append(account_key)
+                
+                query = f"""
+                    UPDATE accounts
+                    SET {', '.join(set_clauses)}
+                    WHERE account_key = ${param_num}
+                """
+                
+                await conn.execute(query, *values)
+                logger.info(
+                    f"✓ Updated profit cap for {account_key}: "
+                    f"enabled={enabled}, type={cap_type}, value={cap_value}, buffer={buffer_pct}"
+                )
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to update profit cap for {account_key}: {e}")
+            return False
+    
+    async def set_account_profit_cap_frozen(self, account_key: str, frozen: bool) -> bool:
+        """
+        Set account profit cap frozen state.
+        
+        Args:
+            account_key: Account identifier
+            frozen: Freeze/unfreeze account
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE accounts SET profit_cap_frozen = $1 WHERE account_key = $2",
+                    frozen, account_key
+                )
+                logger.info(f"✓ Account {account_key} profit_cap_frozen={frozen}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update profit_cap_frozen for {account_key}: {e}")
             return False
     
     async def delete_account(self, account_key: str) -> bool:

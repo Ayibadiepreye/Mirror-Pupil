@@ -71,7 +71,12 @@ CREATE TABLE IF NOT EXISTS accounts (
     paused BOOLEAN DEFAULT FALSE,
     breached BOOLEAN DEFAULT FALSE,
     risk_profile_id INTEGER REFERENCES risk_profiles(profile_id),
-    max_concurrent_trades_override INTEGER
+    max_concurrent_trades_override INTEGER,
+    profit_cap_enabled BOOLEAN DEFAULT FALSE,
+    profit_cap_type TEXT,  -- 'percentage' or 'dollar'
+    profit_cap_value REAL,  -- Percentage value or dollar amount
+    profit_cap_buffer_pct REAL DEFAULT 2.0,  -- Safety buffer percentage
+    profit_cap_frozen BOOLEAN DEFAULT FALSE  -- Account frozen due to profit cap breach
 );
 
 -- Channel Subscriptions: Per-account channel copy settings

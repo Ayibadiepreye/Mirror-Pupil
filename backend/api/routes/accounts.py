@@ -43,6 +43,14 @@ class AccountUpdate(BaseModel):
     max_concurrent_trades_override: Optional[int] = None
 
 
+class ProfitCapUpdate(BaseModel):
+    """Request model for updating profit cap settings."""
+    enabled: bool
+    cap_type: Optional[str] = None  # 'percentage' or 'dollar'
+    cap_value: Optional[float] = None  # Percentage or dollar amount
+    buffer_pct: Optional[float] = 2.0  # Safety buffer percentage (default 2%)
+
+
 class DiscoverAccountsRequest(BaseModel):
     """Request model for discovering TradeLocker accounts."""
     email: str
@@ -101,6 +109,11 @@ class AccountResponse(BaseModel):
     breached: bool
     risk_profile_id: Optional[int]
     max_concurrent_trades_override: Optional[int]
+    profit_cap_enabled: bool
+    profit_cap_type: Optional[str]
+    profit_cap_value: Optional[float]
+    profit_cap_buffer_pct: float
+    profit_cap_frozen: bool
     daily_drawdown_pct: float
     daily_loss_limit_pct: float
     overall_drawdown_pct: float
@@ -989,4 +1002,271 @@ async def reset_payout(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset payout: {str(e)}"
+        )
+
+
+@router.post("/{account_key}/profit-cap", response_model=AccountResponse)
+async def update_profit_cap(
+    account_key: str,
+    profit_cap_data: ProfitCapUpdate,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Update profit cap settings for an account.
+    
+    Validates:
+    - initial_balance must be > 0 to enable profit cap
+    - cap_value must be > 0
+    - cap_type must be 'percentage' or 'dollar'
+    - buffer_pct must be 0-100
+    - Current profit must be below cap (Option 2 validation)
+    
+    Args:
+        account_key: Account key
+        profit_cap_data: Profit cap settings
+    
+    Returns:
+        Updated account details
+    """
+    try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
+        # Get account
+        account = await db.get_account(account_key)
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Account not found: {account_key}"
+            )
+        
+        # Validation if enabling profit cap
+        if profit_cap_data.enabled:
+            # Check initial_balance
+            if not account.initial_balance or account.initial_balance <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot enable profit cap: initial_balance is not set or invalid"
+                )
+            
+            # Check cap_type and cap_value
+            if not profit_cap_data.cap_type or profit_cap_data.cap_type not in ['percentage', 'dollar']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="cap_type must be 'percentage' or 'dollar'"
+                )
+            
+            if profit_cap_data.cap_value is None or profit_cap_data.cap_value <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="cap_value must be greater than 0"
+                )
+            
+            # Check buffer_pct
+            if profit_cap_data.buffer_pct is not None:
+                if profit_cap_data.buffer_pct < 0 or profit_cap_data.buffer_pct > 100:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="buffer_pct must be between 0 and 100"
+                    )
+            
+            # OPTION 2 VALIDATION: Check if current profit is already above cap
+            # Calculate current profit
+            current_balance = account.current_balance or 0.0
+            active_trades = await db.get_active_trades(account_key)
+            open_pnl = sum(trade.current_pnl or 0.0 for trade in active_trades if trade.status == 'filled')
+            total_value = current_balance + open_pnl
+            current_profit = total_value - account.initial_balance
+            
+            # Calculate cap threshold
+            if profit_cap_data.cap_type == 'percentage':
+                cap_profit = account.initial_balance * (profit_cap_data.cap_value / 100.0)
+            else:  # dollar
+                cap_profit = profit_cap_data.cap_value
+            
+            # Block if current profit exceeds cap
+            if current_profit > cap_profit:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Cannot set profit cap: Current profit ${current_profit:.2f} exceeds "
+                        f"cap ${cap_profit:.2f}. Close trades or set a higher cap."
+                    )
+                )
+        
+        # Update profit cap settings
+        success = await db.update_account_profit_cap(
+            account_key=account_key,
+            enabled=profit_cap_data.enabled,
+            cap_type=profit_cap_data.cap_type,
+            cap_value=profit_cap_data.cap_value,
+            buffer_pct=profit_cap_data.buffer_pct
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update profit cap settings"
+            )
+        
+        # Get updated account
+        updated_account = await db.get_account(account_key)
+        logger.info(
+            f"✓ Updated profit cap for {account_key}: "
+            f"enabled={profit_cap_data.enabled}, type={profit_cap_data.cap_type}, "
+            f"value={profit_cap_data.cap_value}, buffer={profit_cap_data.buffer_pct}"
+        )
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(updated_account.risk_profile_id) if updated_account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields
+        daily_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            daily_drawdown_pct = ((updated_account.daily_start_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        
+        overall_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            overall_drawdown_pct = ((updated_account.highest_banked_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        score_data = await consistency_calculator.calculate_consistency_score(updated_account)
+        consistency_score = score_data.get('score')
+        
+        summary = await consistency_calculator.get_profitable_days_summary(updated_account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            updated_account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update profit cap for {account_key}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update profit cap: {str(e)}"
+        )
+
+
+@router.post("/{account_key}/unfreeze-profit-cap", response_model=AccountResponse)
+async def unfreeze_profit_cap(
+    account_key: str,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Manually unfreeze an account that was frozen due to profit cap breach.
+    
+    Args:
+        account_key: Account key
+    
+    Returns:
+        Updated account details
+    """
+    try:
+        # Verify ownership
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this account"
+            )
+        
+        # Get account
+        account = await db.get_account(account_key)
+        if not account:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Account not found: {account_key}"
+            )
+        
+        # Check if account is actually frozen
+        if not account.profit_cap_frozen:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Account is not frozen"
+            )
+        
+        # Unfreeze account
+        success = await db.set_account_profit_cap_frozen(account_key, False)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to unfreeze account"
+            )
+        
+        # Get updated account
+        updated_account = await db.get_account(account_key)
+        logger.info(f"✓ Unfroze profit cap for {account_key}")
+        
+        # Get calculators for response
+        consistency_calculator = await get_consistency_calculator(db)
+        
+        # Get risk profile
+        profile = await db.get_risk_profile(updated_account.risk_profile_id) if updated_account.risk_profile_id else None
+        if not profile:
+            profile = await db.get_default_risk_profile()
+        
+        # Calculate fields
+        daily_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            daily_drawdown_pct = ((updated_account.daily_start_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        daily_loss_limit_pct = profile.daily_loss_pct if profile else 5.0
+        
+        overall_drawdown_pct = 0.0
+        if updated_account.initial_balance and updated_account.initial_balance > 0:
+            overall_drawdown_pct = ((updated_account.highest_banked_balance - updated_account.current_balance) / updated_account.initial_balance) * 100
+        overall_loss_limit_pct = profile.overall_loss_pct if profile else 10.0
+        
+        score_data = await consistency_calculator.calculate_consistency_score(updated_account)
+        consistency_score = score_data.get('score')
+        
+        summary = await consistency_calculator.get_profitable_days_summary(updated_account.account_key, days=30)
+        
+        return AccountResponse.from_account(
+            updated_account,
+            daily_drawdown_pct=daily_drawdown_pct,
+            daily_loss_limit_pct=daily_loss_limit_pct,
+            overall_drawdown_pct=overall_drawdown_pct,
+            overall_loss_limit_pct=overall_loss_limit_pct,
+            consistency_score=consistency_score,
+            profitable_days_count=summary['profitable_count'],
+            total_trading_days=summary['total_days'],
+            required_profitable_days=summary['required']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to unfreeze profit cap for {account_key}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unfreeze profit cap: {str(e)}"
         )

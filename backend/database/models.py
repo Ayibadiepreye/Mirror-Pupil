@@ -69,6 +69,11 @@ class Account(BaseModel):
     breached: bool = False
     risk_profile_id: Optional[int] = None
     max_concurrent_trades_override: Optional[int] = None
+    profit_cap_enabled: bool = False
+    profit_cap_type: Optional[str] = None  # 'percentage' or 'dollar'
+    profit_cap_value: Optional[float] = None  # Percentage or dollar amount
+    profit_cap_buffer_pct: float = 2.0  # Safety buffer percentage
+    profit_cap_frozen: bool = False  # Account frozen due to profit cap breach
 
 
 class ChannelSubscription(BaseModel):
