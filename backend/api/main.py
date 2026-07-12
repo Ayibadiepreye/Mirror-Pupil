@@ -241,6 +241,7 @@ else:
     cors_origins = [
         "https://web.telegram.org",
         "https://k.web.telegram.org",
+        "https://mirror-pupil.vercel.app",  # Vercel production frontend
         # Add your production frontend URL here
     ]
 
