@@ -24,6 +24,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Import registry
+from backend.channels.registry import get_registry
+
 # Apply comprehensive monkey patches for unknown update types
 original_dict_to_obj_obj_encoder = obj_encoder.dict_to_obj
 original_dict_to_obj_utils = pytdbot_utils.dict_to_obj
