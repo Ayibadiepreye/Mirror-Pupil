@@ -10,7 +10,7 @@ from loguru import logger
 
 from ...database import DatabaseManager, Channel
 from ...core.firebase_auth import get_current_user, require_super_admin
-from ..main import get_db
+from ..dependencies import get_db
 
 
 router = APIRouter()

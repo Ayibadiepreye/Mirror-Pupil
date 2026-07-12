@@ -54,18 +54,10 @@ db: DatabaseManager = None
 trade_executor: TradeExecutor = None
 
 
-# Dependency functions (must be defined before importing routes to avoid circular import)
-def get_db() -> DatabaseManager:
-    """Get database instance for dependency injection."""
-    return db
+# Import dependencies module
+from .dependencies import set_db, set_executor
 
-
-def get_executor() -> TradeExecutor:
-    """Get trade executor instance for dependency injection."""
-    return trade_executor
-
-
-# Import routes AFTER defining dependencies
+# Import routes
 from .routes import accounts, channels, risk_profiles, trades, bot_control, notifications, users
 from .websocket import router as websocket_router
 
@@ -83,6 +75,7 @@ async def lifespan(app: FastAPI):
     # Initialize database
     db = DatabaseManager()
     await db.connect()
+    set_db(db)  # Set for dependency injection
     logger.info("✓ Database connected")
     
     # Load accounts from database into AccountManager
@@ -120,6 +113,7 @@ async def lifespan(app: FastAPI):
     # Initialize trade executor
     trade_executor = TradeExecutor(db, dry_run=False)
     await trade_executor.initialize()
+    set_executor(trade_executor)  # Set for dependency injection
     logger.info("✓ Trade executor initialized")
     
     # Initialize notification service
@@ -288,3 +282,21 @@ async def health_check():
         "status": "healthy",
         "database": "connected" if db and db.pool else "disconnected"
     }
+
+
+# Run with uvicorn when executed directly
+if __name__ == "__main__":
+    import uvicorn
+    
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", "8000"))
+    
+    logger.info(f"Starting uvicorn server on {host}:{port}")
+    
+    uvicorn.run(
+        "backend.api.main:app",
+        host=host,
+        port=port,
+        reload=False,
+        log_level="info"
+    )

@@ -15,7 +15,7 @@ from ...database import DatabaseManager, ActiveTrade
 from ...core.trade_executor import get_trade_executor
 from ...core.account_manager import get_account_manager
 from ...core.firebase_auth import get_current_user
-from ..main import get_db
+from ..dependencies import get_db
 
 
 router = APIRouter()

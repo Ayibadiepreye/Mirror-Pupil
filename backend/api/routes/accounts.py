@@ -14,7 +14,7 @@ from ...core.account_manager import get_account_manager
 from ...core.firebase_auth import get_current_user
 from ...risk.consistency import get_consistency_calculator
 from ...risk.calculator import get_risk_calculator
-from ..main import get_db
+from ..dependencies import get_db
 
 
 router = APIRouter()

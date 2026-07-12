@@ -11,7 +11,7 @@ from loguru import logger
 
 from ...database import DatabaseManager
 from ...services.push_notifications import get_push_notification_service
-from ..main import get_db
+from ..dependencies import get_db
 from ...core.firebase_auth import get_current_user
 
 

@@ -12,7 +12,7 @@ from ...core.trade_executor import TradeExecutor
 from ...core.firebase_auth import require_super_admin, get_current_user
 from ...core.bot_state import get_bot_state
 from ...risk.calculator import calculate_usd_pnl
-from ..main import get_db, get_executor
+from ..dependencies import get_db, get_executor
 
 
 router = APIRouter()
