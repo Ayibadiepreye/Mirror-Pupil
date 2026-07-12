@@ -159,18 +159,20 @@ class HumanLikeTelegramClient:
         
         try:
             logger.info(f"[Telegram] Submitting authentication code...")
-            result = await self.client.checkAuthenticationCode(code=code)
+            await self.client.checkAuthenticationCode(code=code)
             
-            # Wait a moment for auth state to update
-            await asyncio.sleep(1)
+            # Wait up to 10 seconds for auth state to change
+            logger.info("[Telegram] Waiting for verification...")
+            for i in range(10):
+                await asyncio.sleep(1)
+                if self.is_authorized:
+                    logger.info("[Telegram] ✓ Authentication successful!")
+                    return True
             
-            # Check if we're still waiting for code (means it was wrong)
-            if hasattr(self, '_auth_state') and self._auth_state == "authorizationStateWaitCode":
-                logger.error("[Telegram] ❌ Invalid code! Try again.")
-                return False
+            # If we get here, auth didn't complete
+            logger.error("[Telegram] ❌ Authentication timed out. Code may be invalid.")
+            return False
             
-            logger.info("[Telegram] ✓ Code accepted!")
-            return True
         except Exception as e:
             logger.error(f"[Telegram] ❌ Failed to submit code: {e}")
             return False
@@ -368,7 +370,9 @@ class HumanLikeTelegramClient:
                         try:
                             code = await loop.run_in_executor(executor, lambda: input("Enter authentication code: "))
                             if code:
-                                await self.set_authentication_code(code.strip())
+                                success = await self.set_authentication_code(code.strip())
+                                if not success:
+                                    logger.error("[Telegram] Failed to authenticate. Please try running the script again.")
                         except Exception as e:
                             logger.error(f"[Telegram] Failed to get code from terminal: {e}")
                     
@@ -392,18 +396,30 @@ class HumanLikeTelegramClient:
                     asyncio.create_task(get_password_from_terminal())
                 
                 elif auth_state == "authorizationStateReady":
-                    logger.info("[Telegram] Authorization successful!")
+                    logger.info("[Telegram] ✓ Authorization state: READY")
+                    logger.info("[Telegram] ✓ Authentication complete!")
                     self.is_authorized = True
                     self._auth_event.set()
+                
+                else:
+                    logger.debug(f"[Telegram] Unhandled auth state: {auth_state}")
             
             logger.info("Starting Telegram client...")
             
             # Start the client
             await self.client.start()
             
-            # Wait for authorization
+            # Wait for authorization with timeout
             logger.info("[Telegram] Waiting for authorization...")
-            await self._auth_event.wait()
+            try:
+                await asyncio.wait_for(self._auth_event.wait(), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.error("[Telegram] ❌ Authorization timed out after 60 seconds")
+                logger.error("[Telegram] Please check:")
+                logger.error("  1. You entered the correct code")
+                logger.error("  2. TDLib is properly installed")
+                logger.error("  3. Network connection is stable")
+                return False
             
             me = await self.client.getMe()
             if me:
