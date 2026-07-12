@@ -158,11 +158,21 @@ class HumanLikeTelegramClient:
             return False
         
         try:
-            logger.info(f"[Telegram] Submitting authentication code")
-            await self.client.checkAuthenticationCode(code=code)
+            logger.info(f"[Telegram] Submitting authentication code...")
+            result = await self.client.checkAuthenticationCode(code=code)
+            
+            # Wait a moment for auth state to update
+            await asyncio.sleep(1)
+            
+            # Check if we're still waiting for code (means it was wrong)
+            if hasattr(self, '_auth_state') and self._auth_state == "authorizationStateWaitCode":
+                logger.error("[Telegram] ❌ Invalid code! Try again.")
+                return False
+            
+            logger.info("[Telegram] ✓ Code accepted!")
             return True
         except Exception as e:
-            logger.error(f"[Telegram] Failed to set authentication code: {e}")
+            logger.error(f"[Telegram] ❌ Failed to submit code: {e}")
             return False
     
     async def set_authentication_password(self, password: str) -> bool:
