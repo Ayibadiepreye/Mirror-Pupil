@@ -702,7 +702,7 @@ class _EditAccountDialogState extends State<EditAccountDialog> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             decoration: const InputDecoration(labelText: 'Cap Type'),
-            value: _profitCapType,
+            initialValue: _profitCapType,
             isExpanded: true,
             items: const [
               DropdownMenuItem(value: 'dollar', child: Text('Dollar Amount')),
