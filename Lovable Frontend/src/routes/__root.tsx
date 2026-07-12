@@ -15,7 +15,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/mp/AppShell";
 import { ConfirmProvider } from "@/components/mp/ConfirmDialog";
-import { AuthProvider, useAuth } from "@/lib/mp/auth-context.tsx";
+import { AuthProvider, useAuth } from "@/lib/mp/auth-context";
 import { getSession } from "@/lib/mp/auth";
 import { auth } from "@/lib/firebase";
 
