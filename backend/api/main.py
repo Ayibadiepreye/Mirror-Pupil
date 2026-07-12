@@ -226,24 +226,28 @@ app = FastAPI(
 
 
 # CORS configuration for Telegram Web App and development
+# Always include production origins
+cors_origins = [
+    "https://web.telegram.org",
+    "https://k.web.telegram.org",
+    "https://mirror-pupil.vercel.app",  # Vercel production frontend
+]
+
 # Check for development environment
 import os
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 DEV_MODE = API_HOST in ["0.0.0.0", "localhost", "127.0.0.1"]
 
 if DEV_MODE:
-    # Development/Local: Allow all localhost/local origins
-    cors_origins = [
-        "*",  # Allow all origins in development
-    ]
-else:
-    # Production: Specific origins only
-    cors_origins = [
-        "https://web.telegram.org",
-        "https://k.web.telegram.org",
-        "https://mirror-pupil.vercel.app",  # Vercel production frontend
-        # Add your production frontend URL here
-    ]
+    # Development/Local: Add localhost origins
+    cors_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8080",
+    ])
 
 app.add_middleware(
     CORSMiddleware,
