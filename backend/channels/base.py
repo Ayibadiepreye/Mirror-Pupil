@@ -214,27 +214,28 @@ class ChannelPlugin(ABC):
         if await self._try_complete_waiting_room(message, clean_text):
             return
         
-        # Try management keywords (some channels post management without replying)
-        mgmt = await self.parse_management(message, clean_text)
-        if mgmt:
-            logger.info(f"[{self.display_name}] {mgmt}")
+        # Try entry parsing FIRST (entry signals are more specific with symbol+direction+prices)
+        signal = await self.parse_entry(message, clean_text)
+        if signal:
+            logger.info(f"[{self.display_name}] {signal}")
             
-            # Execute management action via TradeExecutor
+            # Execute the signal via TradeExecutor
             if self._trade_executor:
                 try:
-                    await self._trade_executor.execute_management(
-                        mgmt=mgmt,
-                        account_keys=None  # Execute on all accounts
+                    await self._trade_executor.execute_signal(
+                        signal=signal,
+                        channel_id=self.channel_id,
+                        account_keys=None  # Execute on all subscribed accounts
                     )
                 except Exception as e:
-                    logger.error(f"[{self.display_name}] Failed to execute management: {e}")
+                    logger.error(f"[{self.display_name}] Failed to execute signal: {e}")
             else:
-                logger.warning(f"[{self.display_name}] TradeExecutor not injected - management not executed")
+                logger.warning(f"[{self.display_name}] TradeExecutor not injected - signal not executed")
             
             return
         
-        # Try entry parsing
-        signal = await self.parse_entry(message, clean_text)
+        # Fallback to management parsing (if entry parsing found nothing)
+        mgmt = await self.parse_management(message, clean_text)
         if signal:
             logger.info(f"[{self.display_name}] {signal}")
             
