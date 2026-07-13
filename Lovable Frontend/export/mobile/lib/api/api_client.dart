@@ -352,7 +352,7 @@ class MpApi {
       'percentage': percentage
     })) as Map<String, dynamic>;
   }
-  Future<({List<TradeHistory> trades, int total})> tradeHistory({
+  Future<List<TradeHistory>> tradeHistory({
     String? accountKey, int limit = 50, int offset = 0,
   }) async {
     if (MpConfig.useMock) {
@@ -360,16 +360,13 @@ class MpApi {
           ? mockStore.history
           : mockStore.history.where((t) => t.accountKey == accountKey).toList();
       final paginated = filtered.skip(offset).take(limit).toList();
-      return _delay((trades: paginated, total: filtered.length));
+      return _delay(paginated);
     }
     final r = await _send('GET', '/api/trades/history', query: {
       if (accountKey != null) 'account_key': accountKey,
       'limit': limit, 'offset': offset,
-    }) as Map<String, dynamic>;
-    return (
-      trades: (r['trades'] as List).map((j) => TradeHistory.fromJson(j)).toList(),
-      total: r['total'] as int,
-    );
+    }) as List;
+    return r.map((j) => TradeHistory.fromJson(j)).toList();
   }
   String historyExportUrl({String? accountKey}) {
     final q = accountKey == null ? '' : '?account_key=${Uri.encodeComponent(accountKey)}';

@@ -25,16 +25,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _f = mpApi.tradeHistory(limit: 5000, offset: 0);
+    _f = _loadHistory();
     _accountsF = mpApi.listAccounts();
     _channelsF = mpApi.listChannels();
   }
 
-  void _reload() => setState(() {
-    _f = mpApi.tradeHistory(
+  Future<({List<TradeHistory> trades, int total})> _loadHistory() async {
+    final trades = await mpApi.tradeHistory(
       accountKey: _accountKey == 'all' ? null : _accountKey,
-      limit: 5000, offset: 0,
+      limit: 5000,
+      offset: 0,
     );
+    return (trades: trades, total: trades.length);
+  }
+
+  void _reload() => setState(() {
+    _f = _loadHistory();
   });
 
   Future<void> _export() async {
