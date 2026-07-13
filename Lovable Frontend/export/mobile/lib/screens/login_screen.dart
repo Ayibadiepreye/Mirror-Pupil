@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../auth/auth_service.dart';
+import '../main.dart';
 import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,7 +19,26 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _busy = true);
     try {
       await fn();
-      if (mounted) context.go('/');
+      
+      // Check if user is approved
+      if (mounted) {
+        try {
+          final user = await mpApi.me();
+          
+          if (!mounted) return;
+          
+          if (!user.isApproved) {
+            // User not approved, go to pending approval screen
+            context.go('/pending-approval');
+          } else {
+            // User approved, go to dashboard
+            context.go('/');
+          }
+        } catch (e) {
+          // If we can't check status, just go to dashboard and let it handle the error
+          if (mounted) context.go('/');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -179,7 +199,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 onPressed: _busy ? null : () =>
-                                    _go(() => auth.signInWithPassword(_email.text.trim(), _password.text), 'Email'),
+                                    _go(() => _signup 
+                                      ? auth.signUpWithPassword(_email.text.trim(), _password.text)
+                                      : auth.signInWithPassword(_email.text.trim(), _password.text), 
+                                      'Email'),
                                 child: Text(_signup ? 'Create account' : 'Sign in',
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                               ),

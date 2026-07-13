@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""
+Check channel subscriptions for all accounts
+"""
+
+import asyncio
+import asyncpg
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+async def check_subscriptions():
+    """Check which channels are enabled for each account"""
+    
+    # Get database URL from environment
+    database_url = os.getenv("DATABASE_URL")
+    
+    if not database_url:
+        print("❌ DATABASE_URL not found in environment")
+        return
+    
+    print(f"Connecting to database...")
+    
+    try:
+        # Connect to database with longer timeout
+        conn = await asyncpg.connect(database_url, timeout=30)
+        print("✓ Connected to database\n")
+        
+        # First, get all channels
+        print("=" * 100)
+        print("AVAILABLE CHANNELS:")
+        print("=" * 100)
+        
+        channels = await conn.fetch(
+            """
+            SELECT channel_id, display_name, enabled
+            FROM channels
+            ORDER BY display_name
+            """
+        )
+        
+        channel_map = {}
+        for ch in channels:
+            status = "✅ ENABLED" if ch['enabled'] else "❌ DISABLED"
+            print(f"  {ch['display_name']:<20} (ID: {ch['channel_id']:<20}) {status}")
+            channel_map[ch['channel_id']] = ch['display_name']
+        
+        # Get all accounts
+        print("\n" + "=" * 100)
+        print("ACCOUNTS AND THEIR CHANNEL SUBSCRIPTIONS:")
+        print("=" * 100)
+        
+        accounts = await conn.fetch(
+            """
+            SELECT account_key, display_name, paused, breached
+            FROM accounts
+            ORDER BY account_key
+            """
+        )
+        
+        if not accounts:
+            print("\n⚠️  No accounts found in database")
+        else:
+            for account in accounts:
+                account_key = account['account_key']
+                display_name = account['display_name'] or account_key
+                paused = account['paused']
+                breached = account['breached']
+                
+                # Get subscriptions for this account
+                subs = await conn.fetch(
+                    """
+                    SELECT cs.channel_id, cs.enabled, c.display_name
+                    FROM channel_subscriptions cs
+                    JOIN channels c ON cs.channel_id = c.channel_id
+                    WHERE cs.account_key = $1
+                    ORDER BY c.display_name
+                    """,
+                    account_key
+                )
+                
+                print(f"\n📊 Account: {display_name}")
+                print(f"   Key: {account_key}")
+                
+                # Account status
+                status_parts = []
+                if paused:
+                    status_parts.append("⏸️  PAUSED")
+                if breached:
+                    status_parts.append("🚨 BREACHED")
+                if not paused and not breached:
+                    status_parts.append("✅ ACTIVE")
+                
+                print(f"   Status: {' | '.join(status_parts)}")
+                print(f"   Channel Subscriptions:")
+                
+                if not subs:
+                    print(f"      ⚠️  No channel subscriptions found")
+                else:
+                    for sub in subs:
+                        channel_name = sub['display_name']
+                        sub_enabled = sub['enabled']
+                        
+                        if sub_enabled:
+                            print(f"      ✅ {channel_name} - ENABLED")
+                        else:
+                            print(f"      ❌ {channel_name} - DISABLED")
+        
+        # Summary
+        print("\n" + "=" * 100)
+        print("SUMMARY:")
+        print("=" * 100)
+        
+        total_accounts = len(accounts)
+        
+        # Count accounts with BillirichyFX enabled
+        billirichy_enabled = await conn.fetchval(
+            """
+            SELECT COUNT(DISTINCT cs.account_key)
+            FROM channel_subscriptions cs
+            JOIN channels c ON cs.channel_id = c.channel_id
+            WHERE c.display_name = 'BillirichyFX'
+            AND cs.enabled = TRUE
+            """
+        )
+        
+        # Count accounts with any channel subscription
+        accounts_with_subs = await conn.fetchval(
+            """
+            SELECT COUNT(DISTINCT account_key)
+            FROM channel_subscriptions
+            WHERE enabled = TRUE
+            """
+        )
+        
+        print(f"Total Accounts: {total_accounts}")
+        print(f"Accounts with at least one channel subscription: {accounts_with_subs}")
+        print(f"Accounts with BillirichyFX enabled: {billirichy_enabled}")
+        print(f"Accounts without any subscriptions: {total_accounts - accounts_with_subs}")
+        
+        print("\n" + "=" * 100)
+        
+        # Close connection
+        await conn.close()
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    asyncio.run(check_subscriptions())

@@ -145,6 +145,38 @@ class AuthService {
     }
   }
 
+  /// Sign up with email and password using Firebase Authentication
+  Future<MpSession> signUpWithPassword(String email, String password) async {
+    if (email.isEmpty || password.isEmpty) {
+      throw Exception('Email and password required');
+    }
+    
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      final user = credential.user;
+      if (user == null) throw Exception('Account creation failed');
+      
+      final token = await user.getIdToken();
+      if (token == null) throw Exception('Failed to get auth token');
+      
+      final session = MpSession(
+        token: token,
+        email: user.email ?? email,
+        displayName: user.displayName ?? email.split('@').first,
+        provider: 'password',
+      );
+      
+      await _save(session);
+      return session;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getFirebaseErrorMessage(e.code));
+    }
+  }
+
   /// Sign in with Google using Firebase Authentication
   Future<MpSession> signInWithGoogle() async {
     try {

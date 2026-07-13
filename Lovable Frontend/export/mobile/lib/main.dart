@@ -10,6 +10,7 @@ import 'api/ws_service.dart';
 import 'auth/auth_service.dart';
 import 'services/fcm_service.dart';
 import 'screens/login_screen.dart';
+import 'screens/pending_approval_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/accounts_screen.dart';
 import 'screens/trades_screen.dart';
@@ -47,12 +48,15 @@ final _router = GoRouter(
   redirect: (ctx, state) {
     final loggedIn = auth.current != null;
     final atLogin = state.matchedLocation == '/login';
-    if (!loggedIn && !atLogin) return '/login';
+    final atPending = state.matchedLocation == '/pending-approval';
+    
+    if (!loggedIn && !atLogin && !atPending) return '/login';
     if (loggedIn && atLogin) return '/';
     return null;
   },
   routes: [
     GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+    GoRoute(path: '/pending-approval', builder: (_, __) => const PendingApprovalScreen()),
     ShellRoute(
       builder: (ctx, state, child) =>
           RootShell(currentLocation: state.uri.path, child: child),

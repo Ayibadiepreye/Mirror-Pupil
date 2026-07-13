@@ -26,18 +26,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() { super.initState(); _f = _load(); }
 
   Future<_DashData> _load() async {
-    final results = await Future.wait([
-      mpApi.listAccounts(),
-      mpApi.activeTrades(),
-      mpApi.botStatus(),
-      mpApi.listNotifications(limit: 10),
-    ]);
-    return _DashData(
-      accounts: results[0] as List<models.Account>,
-      trades: results[1] as List<models.ActiveTrade>,
-      bot: results[2] as models.BotStatus,
-      notifs: results[3] as List<models.Notification>,
-    );
+    try {
+      final results = await Future.wait([
+        mpApi.listAccounts(),
+        mpApi.activeTrades(),
+        mpApi.botStatus(),
+        mpApi.listNotifications(limit: 10),
+      ]);
+      return _DashData(
+        accounts: results[0] as List<models.Account>,
+        trades: results[1] as List<models.ActiveTrade>,
+        bot: results[2] as models.BotStatus,
+        notifs: results[3] as List<models.Notification>,
+      );
+    } catch (e) {
+      // Check if it's a 403 error (user not approved)
+      if (e.toString().contains('403')) {
+        // Redirect to pending approval screen
+        if (mounted) {
+          Future.microtask(() => context.go('/pending-approval'));
+        }
+      }
+      rethrow;
+    }
   }
 
   Future<bool> _confirm(String title, {String? desc, bool destructive = false, String confirm = 'Confirm'}) async {
@@ -199,8 +210,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: FutureBuilder<_DashData>(
         future: _f,
         builder: (ctx, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 64, color: MpColors.danger),
+                    const SizedBox(height: 16),
+                    const Text('Failed to load dashboard', 
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    Text('${snap.error}', 
+                      style: const TextStyle(color: MpColors.textDim),
+                      textAlign: TextAlign.center),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => setState(() => _f = _load()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (!snap.hasData) {
+            return const Center(child: Text('No data available'));
+          }
           final d = snap.data!;
           final dailyPnl = d.accounts.fold<double>(0, (s, a) => s + a.dailyPnl);
           final active = d.accounts.where((a) => !a.paused && !a.breached).length;

@@ -64,7 +64,7 @@ Browser:
 SUPER ADMIN EMAIL
 ====================================
 
-bonnieprincewill@gmail.com
+bonnieprincewill6@gmail.com
 
 This email will have super admin privileges when
 logging in via Firebase authentication in production mode.
