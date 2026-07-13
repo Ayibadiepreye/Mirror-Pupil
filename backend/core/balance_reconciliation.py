@@ -123,6 +123,18 @@ class BalanceReconciliationMonitor:
             if equity > (account.all_time_high_equity or 0.0):
                 await self.db.update_account_balance(account.account_key, actual_balance, equity)
             
+            # CRITICAL FIX: Update highest_banked_balance when balance reaches new high
+            # This is what makes the trailing floor work correctly
+            if actual_balance > (account.highest_banked_balance or 0.0):
+                await self.db.update_account(
+                    account.account_key,
+                    highest_banked_balance=actual_balance
+                )
+                logger.info(
+                    f"[{account.account_key}] New highest banked balance: "
+                    f"${account.highest_banked_balance or 0:.2f} → ${actual_balance:.2f}"
+                )
+            
         except Exception as e:
             logger.error(
                 f"Failed to fetch balance for {account.account_key}: {e}"
