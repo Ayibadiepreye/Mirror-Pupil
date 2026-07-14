@@ -29,7 +29,7 @@ SL_RE = re.compile(
 )
 
 TP_RE = re.compile(
-    r'\b(?:tp\d*|t\.p\d*|t/p\d*|t\s+p\d*|take\s*profit|takeprofit|take-profit|target\d*)\s*[:\-.]?\s*([\d.]+)',
+    r'\b(?:tp|t\.p|t/p|t\s+p|take\s*profit|takeprofit|take-profit|target)(?:\s*\d+)?\s*[:\-.]?\s+([\d.]+)',
     re.IGNORECASE
 )
 
@@ -129,6 +129,9 @@ def extract_tps(text: str) -> List[float]:
     Handles:
     - Multiple TPs: "tp 2680" "tp2 2690"
     - Slash-separated: "tp: 4584/4583.4" or "tp 2650/2660/2670"
+    
+    IMPORTANT: If colon is present, TP value must be AFTER the colon.
+    Prevents false positives like "Take Profit 2:" from capturing "2" as TP value.
     """
     tps = []
     
@@ -153,11 +156,38 @@ def extract_tps(text: str) -> List[float]:
             logger.info(f"[Entry] Detected multi-TP (slash-separated): {tps}")
             return tps
     
-    # Fallback: Original individual TP extraction
+    # Fallback: Individual TP extraction with colon validation
     for match in TP_RE.finditer(text):
         try:
-            tp = float(match.group(1))
+            captured_value = match.group(1)
+            full_match_text = match.group(0)  # Full matched text
+            match_end = match.end()
+            
+            # Check what comes immediately after the matched text
+            next_chars = text[match_end:match_end + 2] if match_end < len(text) else ''
+            
+            # VALIDATION 1: If there's a colon in the matched pattern
+            if ':' in full_match_text:
+                # If colon exists, verify the captured number comes AFTER the colon
+                colon_pos = full_match_text.rfind(':')
+                value_start = full_match_text.find(captured_value)
+                
+                # If the captured value appears BEFORE the colon, skip it
+                # Example: "Take Profit 2:" - the "2" is before the colon, so skip
+                if value_start < colon_pos:
+                    logger.debug(f"[Entry] Skipping TP label before colon: '{full_match_text.strip()}'")
+                    continue
+            
+            # VALIDATION 2: If NO colon in match, but a colon comes right after, skip it
+            # This catches "Take Profit 2" where ":" is on the next line or immediately after
+            if ':' not in full_match_text and next_chars.strip().startswith(':'):
+                logger.debug(f"[Entry] Skipping TP label (colon follows): '{full_match_text.strip()}'")
+                continue
+            
+            # Valid TP found
+            tp = float(captured_value)
             tps.append(tp)
+            
         except ValueError:
             continue
     

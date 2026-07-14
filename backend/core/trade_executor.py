@@ -12,10 +12,10 @@ from ..channels.base import ParsedSignal, ParsedManagement
 from .account_manager import get_account_manager
 from .bot_state import get_bot_state
 from ..database.models import ActiveTrade, Account, RiskProfile
-from ..risk import RiskEnforcer, calculate_price_delta, get_trading_hours_validator
 
 if TYPE_CHECKING:
     from ..database import DatabaseManager
+    from ..risk import RiskEnforcer
 
 
 class TradeExecutor:
@@ -47,7 +47,7 @@ class TradeExecutor:
     
     async def initialize(self):
         """Initialize risk enforcer and notification service (async)."""
-        from ..risk import get_risk_enforcer
+        from ..risk import get_risk_enforcer, get_trading_hours_validator
         from .notification_service import get_notification_service  # Lazy import to avoid circular dependency
         self.risk_enforcer = await get_risk_enforcer(self.db)
         self.notification_service = get_notification_service(self.db)
@@ -89,6 +89,7 @@ class TradeExecutor:
             }
         
         # CRITICAL: Check trading hours SECOND (before any execution)
+        from ..risk import get_trading_hours_validator
         trading_hours = get_trading_hours_validator(db=self.db)
         allowed, reason = await trading_hours.is_trading_allowed()
         

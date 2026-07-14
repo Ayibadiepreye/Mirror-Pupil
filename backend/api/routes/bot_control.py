@@ -484,8 +484,8 @@ async def toggle_eod_trading(
     
     When enabled:
     - Skips 4:45 PM EST force close
-    - Allows new signals after 4:45 PM EST
-    - Allows trading before 6:00 AM EST
+    - Allows new signals during reset lock (5:00 PM - 5:59 PM EST)
+    - Allows trading after 4:45 PM and before 6:00 PM EST
     
     Args:
         request: Toggle request with enabled boolean

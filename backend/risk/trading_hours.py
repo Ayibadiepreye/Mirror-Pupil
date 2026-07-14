@@ -14,10 +14,11 @@ class TradingHoursValidator:
     Validates trading hours for forex markets.
     
     Rules:
-    - Market opens: Sunday 6:00 PM EST
-    - Market closes: Friday 4:45 PM EST (our buffer before 5pm close)
-    - Daily EOD close: 4:45 PM EST (no new trades until 6:00 AM next day)
-    - Weekend: No trading Saturday through Sunday 6:00 PM EST
+    - Daily trading: 6:00 PM EST → 4:45 PM EST next day (22h 45m window)
+    - Daily reset: 4:45 PM - 6:00 PM EST (1h 15m lock)
+    - Weekend close: Friday 4:45 PM EST
+    - Weekend open: Monday 12:00 AM EST (midnight)
+    - Saturday & Sunday: Fully closed
     
     Can be overridden by database settings:
     - allow_weekend_trading: If true, bypass weekend checks
@@ -29,9 +30,10 @@ class TradingHoursValidator:
         self.db = db  # Optional: for checking settings
         
         # Trading hours
-        self.daily_close_time = time(16, 45)  # 4:45 PM EST
-        self.daily_open_time = time(6, 0)     # 6:00 AM EST next day
-        self.weekend_open_time = time(18, 0)  # 6:00 PM EST Sunday
+        self.daily_close_time = time(16, 45)  # 4:45 PM EST - force close trades
+        self.daily_reset_start = time(17, 0)  # 5:00 PM EST - daily reset begins
+        self.daily_open_time = time(18, 0)    # 6:00 PM EST - trading resumes (same day!)
+        self.weekend_open_time = time(0, 0)   # Monday 12:00 AM EST - weekend ends
         
         logger.info("Initialized TradingHoursValidator")
     
@@ -53,27 +55,21 @@ class TradingHoursValidator:
         # RULE 1: Weekend check (can be bypassed)
         if not weekend_allowed:
             if weekday == 5:  # Saturday
-                return False, "WEEKEND_SATURDAY - Market closed on Saturday"
+                return False, "WEEKEND_SATURDAY - Market closed on Saturday. Reopens Monday 12:00 AM EST"
             
-            if weekday == 6:  # Sunday
-                if current_time < self.weekend_open_time:
-                    return False, f"WEEKEND_SUNDAY - Market opens at 6:00 PM EST (currently {current_time.strftime('%I:%M %p')})"
-                else:
-                    # Sunday after 6pm - market is open
-                    return True, "OK"
+            if weekday == 6:  # Sunday - entire day is closed
+                return False, f"WEEKEND_SUNDAY - Market closed on Sunday. Reopens Monday 12:00 AM EST (currently {current_time.strftime('%I:%M %p')})"
             
             # RULE 2: Friday after 4:45pm (weekend close - can be bypassed)
             if weekday == 4:  # Friday
                 if current_time >= self.daily_close_time:
-                    return False, f"WEEKEND_CLOSE - No new trades after 4:45 PM EST on Friday (currently {current_time.strftime('%I:%M %p')})"
+                    return False, f"WEEKEND_CLOSE - No new trades after 4:45 PM EST on Friday (currently {current_time.strftime('%I:%M %p')}). Market reopens Monday 12:00 AM EST"
         
-        # RULE 3: Daily EOD window (can be bypassed)
+        # RULE 3: Daily EOD/Reset window (can be bypassed)
         if not eod_allowed:
-            if current_time >= self.daily_close_time:
-                return False, f"EOD_CLOSE - No new trades after 4:45 PM EST (currently {current_time.strftime('%I:%M %p')}). Market reopens at 6:00 AM EST."
-            
-            if current_time < self.daily_open_time:
-                return False, f"PRE_MARKET - No new trades before 6:00 AM EST (currently {current_time.strftime('%I:%M %p')})"
+            # After 4:45 PM but before 6:00 PM - daily reset period
+            if current_time >= self.daily_close_time and current_time < self.daily_open_time:
+                return False, f"EOD_RESET - Daily reset in progress (4:45 PM - 6:00 PM EST). Market reopens at 6:00 PM EST (currently {current_time.strftime('%I:%M %p')})"
         
         # All checks passed - trading allowed
         return True, "OK"
@@ -112,19 +108,16 @@ class TradingHoursValidator:
         weekday = now.weekday()
         
         if weekday == 5:  # Saturday
-            return "Sunday 6:00 PM EST"
+            return "Monday 12:00 AM EST"
         
-        if weekday == 6 and current_time < self.weekend_open_time:  # Sunday before 6pm
-            return "Sunday 6:00 PM EST"
+        if weekday == 6:  # Sunday - entire day closed
+            return "Monday 12:00 AM EST"
         
         if weekday == 4 and current_time >= self.daily_close_time:  # Friday after 4:45pm
-            return "Sunday 6:00 PM EST"
+            return "Monday 12:00 AM EST"
         
-        if current_time >= self.daily_close_time:  # After 4:45pm any day
-            return "Tomorrow 6:00 AM EST"
-        
-        if current_time < self.daily_open_time:  # Before 6am
-            return "Today 6:00 AM EST"
+        if current_time >= self.daily_close_time and current_time < self.daily_open_time:  # Reset period
+            return "Today 6:00 PM EST"
         
         return "Now (trading allowed)"
     
