@@ -100,22 +100,22 @@ class FirepipsAutonomousManager:
         # Calculate time since entry
         time_since_entry = now - trade.entry_time
         
-        # 4 HOURS: Close remaining 100% (any state)
+        # 4 HOURS: Close remaining 100% (unconditional)
         if time_since_entry >= timedelta(hours=4):
             await self._action_close_all(trade, "4-hour autonomous close")
             return
         
-        # 2 HOURS: Close 50% if in profit
-        if time_since_entry >= timedelta(hours=2):
+        # 2 HOURS: Close 50% if in profit (conditional)
+        elif time_since_entry >= timedelta(hours=2):
             if await self._is_trade_in_profit(trade):
                 await self._action_partial_close(trade, 0.50, "2-hour autonomous partial close")
-            return
+                return
         
-        # 1 HOUR: Move SL to BE if in profit
+        # 1 HOUR: Move SL to BE if in profit (conditional)
         if time_since_entry >= timedelta(hours=1):
             if await self._is_trade_in_profit(trade):
                 await self._action_breakeven(trade, "1-hour autonomous BE")
-            return
+                return
     
     async def _action_breakeven(self, trade: ActiveTrade, reason: str):
         """Move SL to entry price (breakeven)."""

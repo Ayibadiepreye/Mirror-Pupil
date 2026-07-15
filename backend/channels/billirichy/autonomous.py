@@ -108,28 +108,28 @@ class BillirichyAutonomousManager:
         # Calculate time since entry
         time_since_entry = now - trade.entry_time
         
-        # 4 HOURS: Close remaining 100%
+        # 4 HOURS: Close remaining 100% (unconditional)
         if time_since_entry >= timedelta(hours=4):
             await self._action_close_all(trade, "4-hour autonomous close")
             return
         
-        # 2 HOURS: Close 50% if in profit
-        if time_since_entry >= timedelta(hours=2):
+        # 2 HOURS: Close 50% if in profit (conditional)
+        elif time_since_entry >= timedelta(hours=2):
             if await self._is_trade_in_profit(trade):
                 await self._action_partial_close(trade, 0.50, "2-hour autonomous partial close")
-            return
+                return
         
-        # 1 HOUR: Move SL to BE if profit ≥ threshold
+        # 1 HOUR: Move SL to BE if profit ≥ threshold (conditional)
         if time_since_entry >= timedelta(hours=1):
             if await self._should_move_to_be(trade):
                 await self._action_breakeven(trade, "1-hour autonomous BE")
-            return
+                return
         
-        # 15 MINUTES: Auto-assign TP if SL present but no TP
+        # 15 MINUTES: Auto-assign TP if SL present but no TP (conditional)
         if time_since_entry >= timedelta(minutes=15):
             if trade.sl and not trade.tp:
                 await self._action_auto_assign_tp(trade)
-            return
+                return
     
     async def _action_auto_assign_tp(self, trade: ActiveTrade):
         """
