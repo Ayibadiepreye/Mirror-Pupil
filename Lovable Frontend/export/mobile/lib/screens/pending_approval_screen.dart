@@ -93,18 +93,18 @@ class PendingApprovalScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: Column(
+                      child: const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.info_outline,
                                 size: 20,
                                 color: MpColors.warning,
                               ),
-                              const SizedBox(width: 8),
-                              const Text(
+                              SizedBox(width: 8),
+                              Text(
                                 'What happens next?',
                                 style: TextStyle(
                                   fontSize: 14,
@@ -113,17 +113,17 @@ class PendingApprovalScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: 16),
                           _InfoRow(
                             number: '1',
                             text: 'An administrator will review your account',
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: 12),
                           _InfoRow(
                             number: '2',
                             text: 'You will receive an email notification once approved',
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: 12),
                           _InfoRow(
                             number: '3',
                             text: 'Log in again to access the full Mirror Pupil dashboard',
