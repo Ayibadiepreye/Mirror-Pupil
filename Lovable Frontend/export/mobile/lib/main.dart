@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -112,12 +113,47 @@ const List<(String, String, IconData)> _tabs = [
 
 class _RootShellState extends State<RootShell> {
   bool _open = false;
+  int _unreadCount = 0;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnreadCount();
+    // Poll for unread count every 30 seconds
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadUnreadCount());
+    
+    // Listen to WebSocket notifications
+    mpWs.onNotification.listen((_) {
+      _loadUnreadCount();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await mpApi.unreadCount();
+      if (mounted) setState(() => _unreadCount = count);
+    } catch (e) {
+      // Silently fail - don't disrupt UI
+    }
+  }
 
   @override
   void didUpdateWidget(covariant RootShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentLocation != widget.currentLocation && _open) {
       setState(() => _open = false);
+    }
+    // Reload unread count when navigating away from notifications
+    if (oldWidget.currentLocation.startsWith('/notifications') && 
+        !widget.currentLocation.startsWith('/notifications')) {
+      _loadUnreadCount();
     }
   }
 
@@ -135,11 +171,41 @@ class _RootShellState extends State<RootShell> {
               style: TextStyle(fontWeight: FontWeight.w600)),
         ]),
         actions: [
-          IconButton(
-            icon: Icon(onNotifs ? Icons.notifications_active : Icons.notifications_none,
-                color: onNotifs ? MpColors.red : null),
-            tooltip: onNotifs ? 'Close notifications' : 'Open notifications',
-            onPressed: () => context.go(onNotifs ? '/' : '/notifications'),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: Icon(onNotifs ? Icons.notifications_active : Icons.notifications_none,
+                    color: onNotifs ? MpColors.red : null),
+                tooltip: onNotifs ? 'Close notifications' : 'Open notifications',
+                onPressed: () => context.go(onNotifs ? '/' : '/notifications'),
+              ),
+              if (_unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: MpColors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _unreadCount > 99 ? '99+' : '$_unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.logout),

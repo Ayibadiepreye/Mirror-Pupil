@@ -400,6 +400,13 @@ class MpApi {
     }) as List;
     return l.map((j) => Notification.fromJson(j)).toList();
   }
+  Future<int> unreadCount() async {
+    if (MpConfig.useMock) {
+      return _delay(mockStore.notifications.where((n) => !n.read).length);
+    }
+    final r = await _send('GET', '/api/notifications/unread-count') as Map<String, dynamic>;
+    return r['unread_count'] ?? 0;
+  }
   Future<void> markNotificationRead(int id) async {
     if (MpConfig.useMock) {
       final idx = mockStore.notifications.indexWhere((n) => n.notificationId == id);

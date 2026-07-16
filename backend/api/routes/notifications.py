@@ -107,6 +107,55 @@ async def get_all_notifications(
         )
 
 
+@router.get("/unread-count")
+async def get_unread_count(
+    account_key: Optional[str] = None,
+    db: DatabaseManager = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get count of unread notifications for current user.
+    
+    Args:
+        account_key: Optional account filter
+    
+    Returns:
+        Count of unread notifications
+    """
+    try:
+        user_id = user['user_id']
+        is_super_admin = user.get('is_super_admin', False)
+        
+        # If account_key specified, verify ownership
+        if account_key:
+            has_access = await db.verify_account_ownership(account_key, user_id, is_super_admin)
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this account"
+                )
+        
+        # Get unread notifications
+        notifications = await db.get_notifications(
+            account_key=account_key,
+            user_id=user_id,
+            is_super_admin=is_super_admin,
+            unread_only=True,
+            limit=1000  # High limit to get accurate count
+        )
+        count = len(notifications)
+        return {"unread_count": count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get unread count: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get unread count: {str(e)}"
+        )
+
+
+
 @router.post("/", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 async def create_notification(
     notification_data: NotificationCreate,
