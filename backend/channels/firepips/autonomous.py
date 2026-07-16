@@ -139,6 +139,21 @@ class FirepipsAutonomousManager:
                 f"SL moved to BE ({trade.entry_price:.5f}) - {reason}"
             )
             
+            # Notify autonomous action
+            from ...core.notification_service import get_notification_service
+            try:
+                notification_service = get_notification_service(self.db)
+                await notification_service.create_notification(
+                    category='MANAGEMENT',
+                    severity='INFO',
+                    title=f'Auto Breakeven: {trade.symbol}',
+                    message=f'Autonomous: Stop loss moved to breakeven at {trade.entry_price:.5f} ({reason})',
+                    account_key=trade.account_key,
+                    metadata={'action': 'auto_breakeven', 'symbol': trade.symbol, 'sl': trade.entry_price, 'reason': reason}
+                )
+            except Exception as ne:
+                logger.warning(f"Failed to send autonomous notification: {ne}")
+            
         except Exception as e:
             logger.error(f"Failed to move {trade.signal_id} to BE: {e}")
     
@@ -169,6 +184,21 @@ class FirepipsAutonomousManager:
                 f"[AUTO-PARTIAL] {trade.signal_id} ({trade.symbol}): "
                 f"Closed {pct*100:.0f}% ({qty} lots) - {reason}"
             )
+            
+            # Notify autonomous action
+            from ...core.notification_service import get_notification_service
+            try:
+                notification_service = get_notification_service(self.db)
+                await notification_service.create_notification(
+                    category='MANAGEMENT',
+                    severity='INFO',
+                    title=f'Auto Partial Close: {trade.symbol}',
+                    message=f'Autonomous: Closed {pct*100:.0f}% ({qty} lots), {new_lot_size} lots remaining ({reason})',
+                    account_key=trade.account_key,
+                    metadata={'action': 'auto_partial_close', 'symbol': trade.symbol, 'pct': pct, 'qty_closed': qty, 'remaining': new_lot_size, 'reason': reason}
+                )
+            except Exception as ne:
+                logger.warning(f"Failed to send autonomous notification: {ne}")
             
         except Exception as e:
             logger.error(f"Failed to partial close {trade.signal_id}: {e}")
@@ -239,6 +269,21 @@ class FirepipsAutonomousManager:
                 f"[AUTO-CLOSE] {trade.signal_id} ({trade.symbol}): "
                 f"Closed 100% @ {exit_price:.5f} (P&L: ${pnl:.2f}) - {reason}"
             )
+            
+            # Notify autonomous action
+            from ...core.notification_service import get_notification_service
+            try:
+                notification_service = get_notification_service(self.db)
+                await notification_service.create_notification(
+                    category='MANAGEMENT',
+                    severity='INFO',
+                    title=f'Auto Close: {trade.symbol}',
+                    message=f'Autonomous: Position closed at {exit_price:.5f}, P&L: ${pnl:.2f} ({reason})',
+                    account_key=trade.account_key,
+                    metadata={'action': 'auto_close', 'symbol': trade.symbol, 'exit_price': exit_price, 'pnl': pnl, 'reason': reason}
+                )
+            except Exception as ne:
+                logger.warning(f"Failed to send autonomous notification: {ne}")
             
         except Exception as e:
             logger.error(f"Failed to close {trade.signal_id}: {e}")

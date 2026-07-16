@@ -83,6 +83,17 @@ class TradeExecutor:
                 f"Signal rejected: Bot is stopped. "
                 f"Signal: {signal.symbol} {signal.direction}"
             )
+            
+            # Notify rejection
+            if self.notification_service:
+                await self.notification_service.create_notification(
+                    category='SIGNAL',
+                    severity='WARNING',
+                    title=f'Signal Rejected: {signal.symbol}',
+                    message=f'Bot is stopped - {signal.direction} signal for {signal.symbol} not executed',
+                    metadata={'symbol': signal.symbol, 'direction': signal.direction, 'reason': 'bot_stopped'}
+                )
+            
             return {
                 "status": "rejected",
                 "reason": "Bot is stopped - no new trades allowed"
@@ -100,6 +111,16 @@ class TradeExecutor:
                 f"Trading resumes at {next_window}. "
                 f"Signal: {signal.symbol} {signal.direction}"
             )
+            
+            # Notify rejection
+            if self.notification_service:
+                await self.notification_service.create_notification(
+                    category='SIGNAL',
+                    severity='INFO',
+                    title=f'Signal Rejected: {signal.symbol}',
+                    message=f'{reason} - {signal.direction} signal for {signal.symbol} will not execute until {next_window}',
+                    metadata={'symbol': signal.symbol, 'direction': signal.direction, 'reason': reason, 'next_window': str(next_window)}
+                )
             return {
                 "status": "rejected",
                 "reason": reason,
@@ -122,6 +143,19 @@ class TradeExecutor:
         
         if not account_keys:
             logger.warning(f"No accounts subscribed to channel {channel_id}")
+            
+            # Notify no subscribers
+            if self.notification_service:
+                channel = await self.db.get_channel(channel_id)
+                channel_name = channel.display_name if channel else f"Channel {channel_id}"
+                await self.notification_service.create_notification(
+                    category='SIGNAL',
+                    severity='INFO',
+                    title=f'Signal Skipped: {signal.symbol}',
+                    message=f'No active accounts subscribed to {channel_name} for {signal.direction} {signal.symbol}',
+                    metadata={'symbol': signal.symbol, 'direction': signal.direction, 'channel_id': channel_id, 'reason': 'no_subscribers'}
+                )
+            
             return {}
         
         # Get channel info for priority
@@ -1009,6 +1043,18 @@ class TradeExecutor:
                 f"[{account_key}] No trades matched for {mgmt.action} "
                 f"(symbol={mgmt.symbol}, direction={mgmt.direction})"
             )
+            
+            # Notify management failure
+            if self.notification_service:
+                await self.notification_service.create_notification(
+                    category='MANAGEMENT',
+                    severity='WARNING',
+                    title=f'Management Failed: {mgmt.action}',
+                    message=f'No trades matched for {mgmt.action} on {mgmt.symbol or "any symbol"} ({account_key.split(":")[0]})',
+                    account_key=account_key,
+                    metadata={'action': mgmt.action, 'symbol': mgmt.symbol, 'direction': mgmt.direction, 'reason': 'no_match'}
+                )
+            
             return {
                 "status": "no_match",
                 "action": mgmt.action,
@@ -1130,6 +1176,16 @@ class TradeExecutor:
                 logger.info(
                     f"[{account_key}] ✓ BREAKEVEN: {trade.symbol} SL moved to {trade.entry_price}"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Breakeven',
+                        symbol=trade.symbol,
+                        details=f'Stop loss moved to entry price {trade.entry_price}'
+                    )
+                
                 return {"trade_id": trade.trade_id, "status": "success", "action": "breakeven"}
             
             # CLOSE_ALL or IMPLIED_CLOSE
@@ -1201,6 +1257,16 @@ class TradeExecutor:
                 logger.info(
                     f"[{account_key}] ✓ CLOSE_ALL: {trade.symbol} position closed (P&L: ${pnl:.2f})"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Close All',
+                        symbol=trade.symbol,
+                        details=f'Position closed at {exit_price:.5f}, P&L: ${pnl:.2f}'
+                    )
+                
                 return {"trade_id": trade.trade_id, "status": "success", "action": "close_all"}
             
             # PARTIAL_CLOSE
@@ -1220,6 +1286,16 @@ class TradeExecutor:
                     f"[{account_key}] ✓ PARTIAL_CLOSE: {trade.symbol} closed {close_pct*100:.0f}% "
                     f"({qty_to_close} lots, {new_lot_size} remaining)"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Partial Close',
+                        symbol=trade.symbol,
+                        details=f'Closed {close_pct*100:.0f}% ({qty_to_close} lots), {new_lot_size} lots remaining'
+                    )
+                
                 return {
                     "trade_id": trade.trade_id,
                     "status": "success",
@@ -1268,6 +1344,16 @@ class TradeExecutor:
                 logger.info(
                     f"[{account_key}] ✓ MODIFY_SL: {trade.symbol} SL updated to {new_sl}"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Modify Stop Loss',
+                        symbol=trade.symbol,
+                        details=f'Stop loss updated to {new_sl}'
+                    )
+                
                 return {"trade_id": trade.trade_id, "status": "success", "action": "modify_sl", "new_sl": new_sl}
             
             # MODIFY_TP
@@ -1310,6 +1396,16 @@ class TradeExecutor:
                 logger.info(
                     f"[{account_key}] ✓ MODIFY_TP: {trade.symbol} TP updated to {new_tp}"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Modify Take Profit',
+                        symbol=trade.symbol,
+                        details=f'Take profit updated to {new_tp}'
+                    )
+                
                 return {"trade_id": trade.trade_id, "status": "success", "action": "modify_tp", "new_tp": new_tp}
             
             # COMPOUND (Close 50% + Breakeven)
@@ -1333,6 +1429,15 @@ class TradeExecutor:
                 logger.info(
                     f"[{account_key}] ✓ COMPOUND: {trade.symbol} closed 50% ({qty_to_close} lots) + BE"
                 )
+                
+                # Notify management success
+                if self.notification_service:
+                    await self.notification_service.management_action(
+                        account_key=account_key,
+                        action_type='Compound',
+                        symbol=trade.symbol,
+                        details=f'Closed 50% ({qty_to_close} lots) and moved to breakeven'
+                    )
                 return {
                     "trade_id": trade.trade_id,
                     "status": "success",
@@ -1347,6 +1452,15 @@ class TradeExecutor:
                     logger.info(
                         f"[{account_key}] ✓ TP1_HIT: {trade.symbol} marked for trailing stop"
                     )
+                    
+                    # Notify TP1 hit
+                    if self.notification_service:
+                        await self.notification_service.management_action(
+                            account_key=account_key,
+                            action_type='TP1 Hit',
+                            symbol=trade.symbol,
+                            details=f'First take profit hit - trailing stop activated'
+                        )
                 else:
                     logger.info(
                         f"[{account_key}] ℹ {action}: {trade.symbol} (informational)"
@@ -1379,6 +1493,16 @@ class TradeExecutor:
                     logger.info(
                         f"[{account_key}] ✓ CANCEL_PENDING: {trade.symbol} order cancelled"
                     )
+                    
+                    # Notify cancel success
+                    if self.notification_service:
+                        await self.notification_service.management_action(
+                            account_key=account_key,
+                            action_type='Cancel Pending',
+                            symbol=trade.symbol,
+                            details=f'Pending order cancelled'
+                        )
+                    
                     return {"trade_id": trade.trade_id, "status": "success", "action": "cancel_pending"}
                 else:
                     logger.warning(

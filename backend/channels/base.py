@@ -239,6 +239,19 @@ class ChannelPlugin(ABC):
         if mgmt:
             logger.info(f"[{self.display_name}] {mgmt}")
             
+            # Notify management detection
+            if self._trade_executor and self._trade_executor.notification_service:
+                try:
+                    await self._trade_executor.notification_service.create_notification(
+                        category='MANAGEMENT',
+                        severity='INFO',
+                        title=f'Management Signal: {mgmt.action}',
+                        message=f'{self.display_name} detected {mgmt.action} for {mgmt.symbol or "trades"}',
+                        metadata={'action': mgmt.action, 'symbol': mgmt.symbol, 'direction': mgmt.direction, 'channel': self.display_name}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send management detection notification: {e}")
+            
             # Execute the management action via TradeExecutor
             if self._trade_executor:
                 try:
