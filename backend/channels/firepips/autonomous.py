@@ -18,9 +18,9 @@ class FirepipsAutonomousManager:
     Autonomous management for Firepips trades.
     
     Per spec Section 6.7:
-    - 2 hours: Move SL to BE if trade in profit (floating P&L > 0)
+    - 1.5 hours: Move SL to BE if trade in profit (floating P&L > 0)
     - 3 hours: Close 50% if trade in profit
-    - 5 hours: Force close remaining (any state)
+    - 4 hours: Force close remaining (any state)
     - 4:45 PM EST: Force close all (EOD) ✅ Already implemented in eod_close.py
     - Friday 4:45 PM EST: Force close all (weekend) ✅ Already implemented
     
@@ -93,16 +93,16 @@ class FirepipsAutonomousManager:
         Check a single trade for autonomous actions.
         
         Actions are checked in priority order:
-        1. 5 hours → Close 100% (any state)
+        1. 4 hours → Close 100% (any state)
         2. 3 hours → Close 50% (if in profit)
-        3. 2 hours → Move SL to BE (if in profit)
+        3. 1.5 hours → Move SL to BE (if in profit)
         """
         # Calculate time since entry
         time_since_entry = now - trade.entry_time
         
-        # 5 HOURS: Close remaining 100% (unconditional)
-        if time_since_entry >= timedelta(hours=5):
-            await self._action_close_all(trade, "5-hour autonomous close")
+        # 4 HOURS: Close remaining 100% (unconditional)
+        if time_since_entry >= timedelta(hours=4):
+            await self._action_close_all(trade, "4-hour autonomous close")
             return
         
         # 3 HOURS: Close 50% if in profit (conditional)
@@ -111,10 +111,10 @@ class FirepipsAutonomousManager:
                 await self._action_partial_close(trade, 0.50, "3-hour autonomous partial close")
                 return
         
-        # 2 HOURS: Move SL to BE if in profit (conditional)
-        if time_since_entry >= timedelta(hours=2):
+        # 1.5 HOURS: Move SL to BE if in profit (conditional)
+        if time_since_entry >= timedelta(hours=1, minutes=30):
             if await self._is_trade_in_profit(trade):
-                await self._action_breakeven(trade, "2-hour autonomous BE")
+                await self._action_breakeven(trade, "1.5-hour autonomous BE")
                 return
     
     async def _action_breakeven(self, trade: ActiveTrade, reason: str):

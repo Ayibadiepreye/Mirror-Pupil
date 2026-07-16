@@ -123,9 +123,12 @@ class _RootShellState extends State<RootShell> {
     // Poll for unread count every 30 seconds
     _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadUnreadCount());
     
-    // Listen to WebSocket notifications
-    mpWs.onNotification.listen((_) {
-      _loadUnreadCount();
+    // Listen to WebSocket messages for real-time updates
+    mpWs.message$.listen((msg) {
+      // Reload unread count when any notification-related event occurs
+      if (msg['type'] == 'notification' || msg['type'] == 'notification_created') {
+        _loadUnreadCount();
+      }
     });
   }
 

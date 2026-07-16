@@ -19,9 +19,9 @@ class BillirichyAutonomousManager:
     
     Per spec Section 4.7:
     - 15 minutes: Auto-assign TP if SL present but no TP
-    - 2 hours: Move SL to BE if profit ≥ 15 pips (XAUUSD) or 8 pips (forex)
+    - 1.5 hours: Move SL to BE if profit ≥ 15 pips (XAUUSD) or 8 pips (forex)
     - 3 hours: Close 50% if trade in profit
-    - 5 hours: Close remaining 100%
+    - 4 hours: Close remaining 100%
     - 4:45 PM EST: Force close all (EOD) ✅ Already implemented in eod_close.py
     - Friday 4:45 PM EST: Force close all (weekend) ✅ Already implemented
     
@@ -100,17 +100,17 @@ class BillirichyAutonomousManager:
         Check a single trade for autonomous actions.
         
         Actions are checked in priority order:
-        1. 5 hours → Close 100%
+        1. 4 hours → Close 100%
         2. 3 hours → Close 50% (if in profit)
-        3. 2 hours → Move SL to BE (if profit ≥ threshold)
+        3. 1.5 hours → Move SL to BE (if profit ≥ threshold)
         4. 15 minutes → Auto-assign TP (if SL present but no TP)
         """
         # Calculate time since entry
         time_since_entry = now - trade.entry_time
         
-        # 5 HOURS: Close remaining 100% (unconditional)
-        if time_since_entry >= timedelta(hours=5):
-            await self._action_close_all(trade, "5-hour autonomous close")
+        # 4 HOURS: Close remaining 100% (unconditional)
+        if time_since_entry >= timedelta(hours=4):
+            await self._action_close_all(trade, "4-hour autonomous close")
             return
         
         # 3 HOURS: Close 50% if in profit (conditional)
@@ -119,10 +119,10 @@ class BillirichyAutonomousManager:
                 await self._action_partial_close(trade, 0.50, "3-hour autonomous partial close")
                 return
         
-        # 2 HOURS: Move SL to BE if profit ≥ threshold (conditional)
-        if time_since_entry >= timedelta(hours=2):
+        # 1.5 HOURS: Move SL to BE if profit ≥ threshold (conditional)
+        if time_since_entry >= timedelta(hours=1, minutes=30):
             if await self._should_move_to_be(trade):
-                await self._action_breakeven(trade, "2-hour autonomous BE")
+                await self._action_breakeven(trade, "1.5-hour autonomous BE")
                 return
         
         # 15 MINUTES: Auto-assign TP if SL present but no TP (conditional)
