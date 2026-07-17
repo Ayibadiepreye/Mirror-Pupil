@@ -19,7 +19,8 @@ CLOSE_SYMBOL_RE = re.compile(
 )
 
 CLOSE_CONTEXT_RE = re.compile(
-    r'\bclose\s+it\b|^\s*close\s*$',
+    r'\bclose\s+it\b|'           # "close it" anywhere
+    r'^\s*close\b',               # "close" at start (allows words after)
     re.IGNORECASE
 )
 
@@ -197,7 +198,8 @@ def detect_direction_in_management(text: str) -> Optional[str]:
 async def parse_management_action(
     message,
     text: str,
-    channel_id: int
+    channel_id: int,
+    db = None  # DatabaseManager for smart matching
 ) -> Optional[ParsedManagement]:
     """
     Parse a management action from BillirichyFX.
@@ -205,7 +207,9 @@ async def parse_management_action(
     Priority Order:
     1. CLOSE_ALL (broadcast)
     2. CLOSE_SYMBOL (symbol-specific)
-    3. CLOSE (context-only, reply-dependent)
+    3. CLOSE (context-only):
+       - If reply to message → close that trade
+       - If "close" starts the message → smart match most recent open trade
     4. PARTIAL_CLOSE_X%
     5. COMPOUND
     6. BREAKEVEN
@@ -254,12 +258,64 @@ async def parse_management_action(
                     break
         
         if symbol_from_close:
+            # Verify trade exists in database
+            if db:
+                try:
+                    exists = await db.execute_query(
+                        """
+                        SELECT COUNT(*) 
+                        FROM trades 
+                        WHERE channel_id = ? 
+                          AND symbol = ?
+                          AND status = 'ACTIVE'
+                        """,
+                        (channel_id, symbol_from_close),
+                        fetch_one=True
+                    )
+                    
+                    if exists and exists[0] > 0:
+                        logger.debug(f"[MGMT] Verified {symbol_from_close} exists in database")
+                    else:
+                        logger.warning(
+                            f"[MGMT] CLOSE command for {symbol_from_close} but no active trade found - ignoring"
+                        )
+                        # Don't return ParsedManagement if trade doesn't exist
+                        symbol_from_close = None
+                except Exception as e:
+                    logger.error(f"[MGMT] Database verification failed: {e}")
+            
+            if symbol_from_close:
+                return ParsedManagement(
+                    channel_id=channel_id,
+                    msg_id=msg_id,
+                    reply_to_msg_id=reply_to,
+                    action='CLOSE_ALL',
+                    symbol=symbol_from_close,
+                    direction=direction,
+                    new_sl=None,
+                    new_tp=None,
+                    close_pct=None,
+                    raw_text=text,
+                    timestamp=timestamp
+                )
+    
+    # 3. CLOSE (context-based with smart matching)
+    # Match if:
+    # a) Has reply_to (closes replied trade)
+    # b) "close" at start of line + has recent open trade (smart match)
+    close_context_match = CLOSE_CONTEXT_RE.search(text)
+    close_at_start = text.strip().startswith('close')
+    
+    if close_context_match:
+        # If reply exists, always honor it
+        if reply_to:
+            logger.debug(f"[MGMT] Detected CLOSE_CONTEXT with reply_to={reply_to}")
             return ParsedManagement(
                 channel_id=channel_id,
                 msg_id=msg_id,
                 reply_to_msg_id=reply_to,
                 action='CLOSE_ALL',
-                symbol=symbol_from_close,
+                symbol=symbol,
                 direction=direction,
                 new_sl=None,
                 new_tp=None,
@@ -267,115 +323,186 @@ async def parse_management_action(
                 raw_text=text,
                 timestamp=timestamp
             )
+        
+        # If "close" at start + no reply → smart match most recent trade
+        elif close_at_start:
+            logger.debug(f"[MGMT] Detected CLOSE at start with no reply - attempting smart match")
+            
+            # Try to get most recent open trade for this channel
+            if db:
+                try:
+                    # Get most recent active trade from this channel
+                    recent_trade = await db.execute_query(
+                        """
+                        SELECT symbol, direction 
+                        FROM trades 
+                        WHERE channel_id = ? 
+                          AND status = 'ACTIVE' 
+                          AND account_key IN (
+                              SELECT account_key FROM channel_subscriptions WHERE channel_id = ?
+                          )
+                        ORDER BY opened_at DESC 
+                        LIMIT 1
+                        """,
+                        (channel_id, channel_id),
+                        fetch_one=True
+                    )
+                    
+                    if recent_trade:
+                        smart_symbol = recent_trade[0]
+                        smart_direction = recent_trade[1]
+                        logger.info(
+                            f"[MGMT] Smart match: Found recent trade {smart_symbol} {smart_direction}"
+                        )
+                        return ParsedManagement(
+                            channel_id=channel_id,
+                            msg_id=msg_id,
+                            reply_to_msg_id=None,
+                            action='CLOSE_ALL',
+                            symbol=smart_symbol,
+                            direction=smart_direction,
+                            new_sl=None,
+                            new_tp=None,
+                            close_pct=None,
+                            raw_text=text,
+                            timestamp=timestamp
+                        )
+                    else:
+                        logger.debug(f"[MGMT] Smart match: No recent open trades found")
+                except Exception as e:
+                    logger.error(f"[MGMT] Smart match failed: {e}")
+        
+        # No reply and not at start (or smart match failed)
+        logger.debug(f"[MGMT] Detected CLOSE_CONTEXT pattern but no reply and no smart match - ignoring")
     
-    # 3. CLOSE (context-only, MUST be a reply)
-    if reply_to and CLOSE_CONTEXT_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='CLOSE_ALL',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=None,
-            raw_text=text,
-            timestamp=timestamp
-        )
+    # Helper function to verify symbol exists in active trades
+    async def verify_symbol_exists(symbol_to_check: Optional[str]) -> bool:
+        """Check if symbol has active trades in database."""
+        if not symbol_to_check or not db:
+            return True  # Skip verification if no symbol or no DB
+        
+        try:
+            exists = await db.execute_query(
+                """
+                SELECT COUNT(*) 
+                FROM trades 
+                WHERE channel_id = ? 
+                  AND symbol = ?
+                  AND status = 'ACTIVE'
+                """,
+                (channel_id, symbol_to_check),
+                fetch_one=True
+            )
+            
+            if exists and exists[0] > 0:
+                return True
+            else:
+                logger.warning(
+                    f"[MGMT] Command for {symbol_to_check} but no active trade found - ignoring"
+                )
+                return False
+        except Exception as e:
+            logger.error(f"[MGMT] Database verification failed: {e}")
+            return True  # Don't block if DB query fails
     
     # 4. PARTIAL CLOSE (in order of specificity)
     if PARTIAL_CLOSE_75_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='PARTIAL_CLOSE_75',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=0.75,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='PARTIAL_CLOSE_75',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=0.75,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     if PARTIAL_CLOSE_70_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='PARTIAL_CLOSE_70',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=0.70,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='PARTIAL_CLOSE_70',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=0.70,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     if PARTIAL_CLOSE_50_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='PARTIAL_CLOSE_50',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=0.50,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='PARTIAL_CLOSE_50',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=0.50,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     if PARTIAL_CLOSE_33_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='PARTIAL_CLOSE_33',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=0.33,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='PARTIAL_CLOSE_33',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=0.33,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     # 5. COMPOUND (close 50% + set BE)
     if COMPOUND_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='COMPOUND',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=0.50,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='COMPOUND',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=0.50,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     # 6. BREAKEVEN
     if BREAKEVEN_RE.search(text):
-        return ParsedManagement(
-            channel_id=channel_id,
-            msg_id=msg_id,
-            reply_to_msg_id=reply_to,
-            action='BREAKEVEN',
-            symbol=symbol,
-            direction=direction,
-            new_sl=None,
-            new_tp=None,
-            close_pct=None,
-            raw_text=text,
-            timestamp=timestamp
-        )
+        if await verify_symbol_exists(symbol):
+            return ParsedManagement(
+                channel_id=channel_id,
+                msg_id=msg_id,
+                reply_to_msg_id=reply_to,
+                action='BREAKEVEN',
+                symbol=symbol,
+                direction=direction,
+                new_sl=None,
+                new_tp=None,
+                close_pct=None,
+                raw_text=text,
+                timestamp=timestamp
+            )
     
     # 7. MODIFY SL
     match = MODIFY_SL_RE.search(text)
@@ -393,7 +520,7 @@ async def parse_management_action(
                 except ValueError:
                     continue
         
-        if new_sl:
+        if new_sl and await verify_symbol_exists(symbol):
             return ParsedManagement(
                 channel_id=channel_id,
                 msg_id=msg_id,
@@ -424,7 +551,7 @@ async def parse_management_action(
                 except ValueError:
                     continue
         
-        if new_tp:
+        if new_tp and await verify_symbol_exists(symbol):
             return ParsedManagement(
                 channel_id=channel_id,
                 msg_id=msg_id,

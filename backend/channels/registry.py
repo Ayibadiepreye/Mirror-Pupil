@@ -83,6 +83,9 @@ class ChannelRegistry:
                 if self._trade_executor:
                     plugin._trade_executor = self._trade_executor
                 
+                # Inject database for smart matching
+                plugin._db = self._db
+                
                 self._plugins[channel.channel_id] = plugin
                 
                 logger.info(

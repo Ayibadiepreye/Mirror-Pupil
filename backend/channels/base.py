@@ -186,7 +186,7 @@ class ChannelPlugin(ABC):
         # Clean text
         clean_text = self._clean_text(raw_text)
         
-        logger.debug(f"[{self.display_name}] Routing message {msg_id} (edit={is_edit})")
+        logger.debug(f"[{self.display_name}] Routing message {msg_id} (edit={is_edit}, reply_to={reply_to})")
         
         # Edited messages: try management first, then waiting room, then entry
         if is_edit:
@@ -552,10 +552,13 @@ class DynamicChannelPlugin(ChannelPlugin):
     
     async def parse_management(self, message, raw_text: str) -> Optional[ParsedManagement]:
         """Parse management action using configured management module."""
+        # Inject database if available
+        db = getattr(self, '_db', None)
         return await self._parse_management_func(
             message,
             raw_text,
-            self.channel_id
+            self.channel_id,
+            db=db
         )
     
     async def _validate_bare_signal_completion(self, bare_signal, new_signal, message):
