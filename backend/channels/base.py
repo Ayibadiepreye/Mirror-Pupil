@@ -296,13 +296,26 @@ class ChannelPlugin(ABC):
         logger.debug(f"[{self.display_name}] Message {msg_id} - no match (preview: '{clean_text[:80]}{'...' if len(clean_text) > 80 else ''}')")
     
     def _extract_text(self, message) -> str:
-        """Extract text from Telegram message object."""
+        """Extract text from Telegram message object (text messages and photo/video captions)."""
         text = ""
-        if hasattr(message, 'content') and hasattr(message.content, 'text'):
+        
+        if not hasattr(message, 'content'):
+            return text
+        
+        # Try text messages first
+        if hasattr(message.content, 'text'):
             if hasattr(message.content.text, 'text'):
                 text = message.content.text.text
             else:
                 text = str(message.content.text)
+        
+        # Try photo/video captions (messagePhoto, messageVideo, etc.)
+        elif hasattr(message.content, 'caption'):
+            if hasattr(message.content.caption, 'text'):
+                text = message.content.caption.text
+            else:
+                text = str(message.content.caption)
+        
         return text
     
     def _clean_text(self, text: str) -> str:
