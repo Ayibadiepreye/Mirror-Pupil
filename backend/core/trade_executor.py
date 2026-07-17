@@ -243,6 +243,26 @@ class TradeExecutor:
                 f"Signal rejected. Wait for existing trades to close naturally."
             )
             
+            # Send rejection notification
+            if self.notification_service:
+                channel = await self.db.get_channel(channel_id)
+                channel_name = channel.display_name if channel else f"Channel {channel_id}"
+                await self.notification_service.create_notification(
+                    category='RISK',
+                    severity='WARNING',
+                    title=f'Trade Rejected: Concurrent Limit',
+                    message=f'Concurrent trade limit reached ({current_count}/{max_concurrent}) - {signal.direction} {signal.symbol} rejected on {account_key.split(":")[0]} ({channel_name})',
+                    account_key=account_key,
+                    metadata={
+                        'symbol': signal.symbol,
+                        'direction': signal.direction,
+                        'reason': 'concurrent_limit',
+                        'current_count': current_count,
+                        'max_concurrent': max_concurrent,
+                        'channel_name': channel_name
+                    }
+                )
+            
             # Reject the signal - do NOT force close existing trades
             return {
                 "status": "rejected",
@@ -504,6 +524,26 @@ class TradeExecutor:
                     logger.warning(
                         f"[{account_key}] Trade rejected by risk enforcer: {validation['reason']}"
                     )
+                    
+                    # Send rejection notification
+                    if self.notification_service:
+                        channel = await self.db.get_channel(channel_id)
+                        channel_name = channel.display_name if channel else f"Channel {channel_id}"
+                        await self.notification_service.create_notification(
+                            category='RISK',
+                            severity='WARNING',
+                            title=f'Trade Rejected: {signal.symbol}',
+                            message=f'{validation["reason"]} - {signal.direction} signal for {signal.symbol} rejected on {account_key.split(":")[0]} ({channel_name})',
+                            account_key=account_key,
+                            metadata={
+                                'symbol': signal.symbol,
+                                'direction': signal.direction,
+                                'reason': validation['reason'],
+                                'channel_name': channel_name,
+                                'account_key': account_key
+                            }
+                        )
+                    
                     return {
                         "status": "rejected",
                         "reason": validation['reason']

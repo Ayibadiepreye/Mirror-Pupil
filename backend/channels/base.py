@@ -188,17 +188,44 @@ class ChannelPlugin(ABC):
         
         logger.debug(f"[{self.display_name}] Routing message {msg_id} (edit={is_edit})")
         
-        # Edited messages: try management first, then waiting room
+        # Edited messages: try management first, then waiting room, then entry
         if is_edit:
             # Check if this completes a waiting room entry
             if self._is_waiting_room_entry(msg_id):
                 await self._handle_waiting_room_completion(message, clean_text)
                 return
             
-            # Try management
+            # Try management (for editing TP/SL on existing trades)
             mgmt = await self.parse_management(message, clean_text)
             if mgmt:
                 logger.info(f"[{self.display_name}] {mgmt}")
+                
+                # Execute management via TradeExecutor
+                if self._trade_executor:
+                    try:
+                        await self._trade_executor.execute_management(
+                            mgmt=mgmt,
+                            account_keys=None
+                        )
+                    except Exception as e:
+                        logger.error(f"[{self.display_name}] Failed to execute management from edit: {e}")
+                return
+            
+            # Try entry parsing (for corrected signals that were rejected)
+            signal = await self.parse_entry(message, clean_text)
+            if signal:
+                logger.info(f"[{self.display_name}] Edited signal re-parsed: {signal}")
+                
+                # Execute the signal via TradeExecutor
+                if self._trade_executor:
+                    try:
+                        await self._trade_executor.execute_signal(
+                            signal=signal,
+                            channel_id=self.channel_id,
+                            account_keys=None
+                        )
+                    except Exception as e:
+                        logger.error(f"[{self.display_name}] Failed to execute edited signal: {e}")
                 return
             
             logger.debug(f"[{self.display_name}] Edited message {msg_id} - no action")
@@ -266,7 +293,7 @@ class ChannelPlugin(ABC):
             
             return
         
-        logger.debug(f"[{self.display_name}] Message {msg_id} - no match")
+        logger.debug(f"[{self.display_name}] Message {msg_id} - no match (preview: '{clean_text[:80]}{'...' if len(clean_text) > 80 else ''}')")
     
     def _extract_text(self, message) -> str:
         """Extract text from Telegram message object."""

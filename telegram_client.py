@@ -460,11 +460,12 @@ class HumanLikeTelegramClient:
     
     async def _handle_update(self, update: Update):
         """
-        Internal update handler that routes messages to registered channel handlers.
+        Internal update handler that routes NEW messages to registered channel handlers.
+        Edited messages are handled by updateMessageContent listener in listen().
         Implements human-like behavior (mark as read, typing indicator).
         """
         try:
-            # Handle new messages
+            # Handle new messages only
             if hasattr(update, 'message') and update.message:
                 message = update.message
                 chat_id = message.chat_id
@@ -482,26 +483,6 @@ class HumanLikeTelegramClient:
                     # Call the registered handler
                     handler = self.message_handlers[chat_id]
                     await handler(message, is_edit=False)
-                    
-                    self.last_activity = time.time()
-            
-            # Handle edited messages
-            elif hasattr(update, 'message_edited') and update.message_edited:
-                message = update.message_edited
-                chat_id = message.chat_id
-                
-                if chat_id in self.message_handlers:
-                    logger.info(f"✏️ Edited message in channel {chat_id}: ID={message.id}")
-                    
-                    # Mark as read
-                    await self._mark_as_read(chat_id, [message.id])
-                    
-                    # Show typing indicator
-                    await self._typing_indicator(chat_id)
-                    
-                    # Call the registered handler with is_edit=True
-                    handler = self.message_handlers[chat_id]
-                    await handler(message, is_edit=True)
                     
                     self.last_activity = time.time()
             
@@ -525,9 +506,40 @@ class HumanLikeTelegramClient:
             async def on_new_message(c: Client, update: Update):
                 await self._handle_update(update)
             
-            @self.client.on_updateMessageEdited()
-            async def on_message_edited(c: Client, update: Update):
-                await self._handle_update(update)
+            # TDLib uses updateMessageContent for text edits (not updateMessageEdited)
+            @self.client.on_updateMessageContent()
+            async def on_message_content_edited(c: Client, update: Update):
+                """Handle message text edits via updateMessageContent."""
+                try:
+                    chat_id = update.chat_id
+                    message_id = update.message_id
+                    new_content = update.new_content
+                    
+                    # Only process if this is a text message edit
+                    if hasattr(new_content, 'text') and new_content.text:
+                        # Check if we have a handler for this channel
+                        if chat_id in self.message_handlers:
+                            logger.info(f"✏️ Message content edited in channel {chat_id}: ID={message_id}")
+                            
+                            # Fetch the full message object
+                            message = await self.get_message(chat_id, message_id)
+                            if not message:
+                                logger.warning(f"Could not fetch edited message {message_id} from {chat_id}")
+                                return
+                            
+                            # Mark as read
+                            await self._mark_as_read(chat_id, [message_id])
+                            
+                            # Show typing indicator
+                            await self._typing_indicator(chat_id)
+                            
+                            # Call the registered handler with is_edit=True
+                            handler = self.message_handlers[chat_id]
+                            await handler(message, is_edit=True)
+                            
+                            self.last_activity = time.time()
+                except Exception as e:
+                    logger.error(f"Error handling message content edit: {e}", exc_info=True)
             
             @self.client.on_updateConnectionState()
             async def on_connection_state(c: Client, update: Update):
