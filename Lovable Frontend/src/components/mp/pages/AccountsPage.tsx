@@ -66,15 +66,18 @@ export function AccountsPage() {
   const filtered = useMemo(() => {
     const list = accountsQ.data ?? [];
     return list.filter((a) => {
+      // Safety check: skip invalid accounts
+      if (!a || !a.account_key) return false;
+      
       if (status === "active" && (a.paused || a.breached)) return false;
       if (status === "paused" && !a.paused) return false;
       if (status === "breached" && !a.breached) return false;
       if (!search) return true;
       const s = search.toLowerCase();
       return (
-        a.account_key.toLowerCase().includes(s) ||
-        (a.display_name?.toLowerCase().includes(s) ?? false) ||
-        a.tl_email.toLowerCase().includes(s)
+        (a.account_key?.toLowerCase() || "").includes(s) ||
+        (a.display_name?.toLowerCase() || "").includes(s) ||
+        (a.tl_email?.toLowerCase() || "").includes(s)
       );
     });
   }, [accountsQ.data, search, status]);
