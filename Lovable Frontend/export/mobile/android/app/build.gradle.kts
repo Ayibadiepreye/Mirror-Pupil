@@ -26,7 +26,7 @@ android {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.kirito.mirrorpupil"
         // Optimized for lower-spec devices - supports Android 5.0 (Lollipop) and up
-        minSdk = flutter.minSdkVersion
+        minSdk = flutter.minSdkVersion  // Android 5.0 - wider device compatibility
         targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -36,6 +36,10 @@ android {
         
         // Optimize rendering
         vectorDrawables.useSupportLibrary = true
+        
+        // Optimize for lower-end devices
+        renderscriptTargetApi = 21
+        renderscriptSupportModeEnabled = true
     }
 
     buildTypes {
@@ -72,4 +76,7 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    
+    // Add multidex support for lower-spec devices
+    implementation("androidx.multidex:multidex:2.0.1")
 }

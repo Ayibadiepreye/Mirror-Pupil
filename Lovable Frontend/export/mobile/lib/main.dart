@@ -27,6 +27,11 @@ late WsService mpWs;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Performance optimizations for lower-end devices
+  // Reduce memory usage by limiting cached images
+  PaintingBinding.instance.imageCache.maximumSize = 50; // Limit to 50 images
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 50 << 20; // 50 MB max
+  
   // Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
