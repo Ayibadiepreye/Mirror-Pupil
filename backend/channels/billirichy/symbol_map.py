@@ -162,8 +162,9 @@ def normalize_symbol(raw: str) -> str:
     # Clean and lowercase
     clean = raw.lower().strip()
     
-    # Check if excluded
-    if any(excl in clean for excl in EXCLUDED):
+    # Check if excluded (exact word match, not substring)
+    # This prevents 'usdc' from matching 'usdcad'
+    if clean in EXCLUDED:
         return None
     
     # Try direct lookup
