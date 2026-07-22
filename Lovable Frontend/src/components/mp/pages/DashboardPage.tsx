@@ -164,7 +164,7 @@ export function DashboardPage() {
               <li className="p-6 text-center text-sm text-[color:var(--mp-text-dim)]">No notifications yet.</li>
             )}
             {notifs.map((n) => {
-              const Icon = CAT_ICON[n.category];
+              const Icon = CAT_ICON[n.category] || Activity;
               const sevColor = {
                 CRITICAL: "border-[color:var(--mp-danger)]",
                 ERROR: "border-[color:var(--mp-warning)]",

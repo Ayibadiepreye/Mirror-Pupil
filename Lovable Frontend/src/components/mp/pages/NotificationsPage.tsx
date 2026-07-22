@@ -139,7 +139,7 @@ export function NotificationsPage() {
           </li>
         )}
         {items.map((n) => {
-          const Icon = CAT_ICON[n.category];
+          const Icon = CAT_ICON[n.category] || AlertCircle;
           const open = expanded === n.notification_id;
           return (
             <li
