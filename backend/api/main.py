@@ -281,8 +281,9 @@ async def root():
 
 
 @app.get("/health")
+@app.head("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint - supports GET and HEAD requests for uptime monitoring."""
     return {
         "status": "healthy",
         "database": "connected" if db and db.pool else "disconnected"
