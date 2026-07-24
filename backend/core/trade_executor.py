@@ -365,6 +365,150 @@ class TradeExecutor:
             logger.error(f"Lot size calculation failed for {symbol}: {e}, using default")
             return self.default_lot_size
     
+    async def _auto_adjust_lot_size_for_risk(
+        self,
+        account: Account,
+        profile: RiskProfile,
+        intended_lot_size: float,
+        entry_price: float,
+        sl_price: float,
+        symbol: str,
+        client,
+        instrument: dict,
+        account_key: str
+    ) -> dict:
+        """
+        Auto-adjust lot size to fit within available risk budget.
+        
+        Algorithm:
+        1. Calculate max risk per trade from profile
+        2. Get active trades and sum their risk
+        3. Calculate available risk = max_risk - active_risk
+        4. Calculate risk with intended lot size
+        5. If risk > available, adjust lot size to fit exactly within available risk
+        6. Round to lot_step to ensure valid broker lot size
+        
+        Args:
+            account: Account object
+            profile: Risk profile
+            intended_lot_size: Desired lot size (from override or calculation)
+            entry_price: Entry price
+            sl_price: Stop loss price
+            symbol: Trading symbol
+            client: TradeLocker client
+            instrument: Instrument details
+            account_key: Account key for logging
+        
+        Returns:
+            Dict with:
+                - lot_size: Final lot size (adjusted or original)
+                - risk: Final risk in USD
+                - adjusted: Boolean, True if adjustment was made
+                - original_risk: Original risk before adjustment
+                - available_risk: Available risk budget
+        """
+        from ..risk.calculator import calculate_usd_risk
+        
+        try:
+            # Step 1: Calculate max risk per trade
+            balance = account.current_balance or account.initial_balance
+            max_risk_per_trade = balance * (profile.max_risk_per_trade_pct / 100.0)
+            
+            # Step 2: Get active trades and sum their risk
+            active_trades = await self.db.get_active_trades(account_key)
+            active_risk = sum(
+                trade.risk_usd or 0.0 
+                for trade in active_trades 
+                if trade.status == 'filled'
+            )
+            
+            # Step 3: Calculate available risk budget
+            available_risk = max_risk_per_trade - active_risk
+            
+            # Ensure minimum available risk
+            if available_risk < 1.0:
+                logger.warning(
+                    f"[{account_key}] Very low available risk: ${available_risk:.2f} "
+                    f"(max: ${max_risk_per_trade:.2f}, active: ${active_risk:.2f})"
+                )
+                available_risk = max(available_risk, 1.0)  # Minimum $1
+            
+            # Step 4: Calculate risk with intended lot size
+            risk_per_lot = await calculate_usd_risk(
+                symbol=symbol,
+                entry_price=entry_price,
+                stop_loss=sl_price,
+                lot_size=1.0,  # Risk per 1 lot
+                client=client,
+                instrument=instrument
+            )
+            
+            if risk_per_lot <= 0:
+                logger.warning(f"[{account_key}] Invalid risk_per_lot: {risk_per_lot}, cannot auto-adjust")
+                return {
+                    'lot_size': intended_lot_size,
+                    'risk': 0.0,
+                    'adjusted': False,
+                    'original_risk': 0.0,
+                    'available_risk': available_risk
+                }
+            
+            intended_risk = intended_lot_size * risk_per_lot
+            
+            # Step 5: Check if adjustment needed
+            if intended_risk > available_risk:
+                # Risk exceeds budget - auto-adjust
+                adjusted_lot_size = available_risk / risk_per_lot
+                
+                # Step 6: Round to lot_step
+                lot_step = instrument.get('lot_step', 0.01)
+                final_lot_size = client.round_lot_size(adjusted_lot_size, lot_step)
+                
+                # Calculate final risk with rounded lot size
+                final_risk = final_lot_size * risk_per_lot
+                
+                logger.info(
+                    f"[{account_key}] AUTO-ADJUST CALCULATION: "
+                    f"intended_lot={intended_lot_size:.4f} (risk=${intended_risk:.2f}), "
+                    f"available_risk=${available_risk:.2f}, "
+                    f"risk_per_lot=${risk_per_lot:.2f}, "
+                    f"adjusted_lot={adjusted_lot_size:.4f}, "
+                    f"rounded_lot={final_lot_size} (risk=${final_risk:.2f})"
+                )
+                
+                return {
+                    'lot_size': final_lot_size,
+                    'risk': final_risk,
+                    'adjusted': True,
+                    'original_risk': intended_risk,
+                    'available_risk': available_risk
+                }
+            else:
+                # Within budget - use intended lot size
+                logger.debug(
+                    f"[{account_key}] Lot size within risk budget: "
+                    f"{intended_lot_size} lots (risk=${intended_risk:.2f}, "
+                    f"available=${available_risk:.2f})"
+                )
+                
+                return {
+                    'lot_size': intended_lot_size,
+                    'risk': intended_risk,
+                    'adjusted': False,
+                    'original_risk': intended_risk,
+                    'available_risk': available_risk
+                }
+                
+        except Exception as e:
+            logger.error(f"[{account_key}] Auto-adjust failed: {e}, using intended lot size")
+            return {
+                'lot_size': intended_lot_size,
+                'risk': 0.0,
+                'adjusted': False,
+                'original_risk': 0.0,
+                'available_risk': 0.0
+            }
+    
     async def _execute_on_account(
         self,
         signal: ParsedSignal,
@@ -496,8 +640,8 @@ class TradeExecutor:
                     entry_price_for_calc = 0.0
                     logger.warning(f"[{account_key}] Could not fetch market price for {signal.symbol}")
             
-            # Calculate lot size based on risk profile
-            calculated_lot_size = await self._calculate_lot_size_from_risk(
+            # Calculate lot size based on risk profile OR use override
+            intended_lot_size = await self._calculate_lot_size_from_risk(
                 account=account_db,
                 profile=profile,
                 entry_price=entry_price_for_calc,
@@ -507,7 +651,35 @@ class TradeExecutor:
                 instrument=instrument
             )
             
-            # Step 5: Validate trade with risk enforcer (using calculated lot size)
+            # NEW: Auto-adjust lot size if risk exceeds available budget
+            if signal.sl and signal.sl > 0:
+                adjusted_result = await self._auto_adjust_lot_size_for_risk(
+                    account=account_db,
+                    profile=profile,
+                    intended_lot_size=intended_lot_size,
+                    entry_price=entry_price_for_calc,
+                    sl_price=signal.sl,
+                    symbol=signal.symbol,
+                    client=client,
+                    instrument=instrument,
+                    account_key=account_key
+                )
+                
+                calculated_lot_size = adjusted_result['lot_size']
+                trade_risk = adjusted_result['risk']
+                was_adjusted = adjusted_result['adjusted']
+                
+                if was_adjusted:
+                    logger.info(
+                        f"[{account_key}] AUTO-ADJUSTED: {intended_lot_size} → {calculated_lot_size} lots "
+                        f"(risk ${adjusted_result['original_risk']:.2f} → ${trade_risk:.2f}, "
+                        f"available ${adjusted_result['available_risk']:.2f})"
+                    )
+            else:
+                calculated_lot_size = intended_lot_size
+                trade_risk = 0.0
+            
+            # Step 5: Validate trade with risk enforcer (using final lot size)
             if self.risk_enforcer and signal.sl:
                 validation = await self.risk_enforcer.validate_trade(
                     account=account_db,
