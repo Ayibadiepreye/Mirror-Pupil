@@ -422,14 +422,46 @@ class TradeExecutor:
                 if trade.status == 'filled'
             )
             
-            # Step 3: Calculate available risk budget
-            available_risk = max_risk_per_trade - active_risk
+            # Step 3: Calculate available risk from multiple constraints
+            # 3a: Combined portfolio risk limit
+            available_from_combined = max_risk_per_trade - active_risk
+            
+            # 3b: Daily room with safety buffer
+            from ..risk.calculator import get_risk_calculator
+            calculator = get_risk_calculator()
+            
+            # Get current equity
+            try:
+                account_state = await client.get_account_state()
+                balance_now = float(account_state.get('balance', 0.0) or 0.0)
+                open_pnl = float(account_state.get('openNetPnL', 0.0) or 0.0)
+                current_equity = balance_now + open_pnl
+            except:
+                current_equity = account.current_balance or account.initial_balance
+            
+            daily_floor = calculator.calculate_daily_floor(account, profile)
+            daily_room = current_equity - daily_floor
+            safety_buffer = daily_room * (profile.safety_buffer_pct / 100)
+            available_from_daily = daily_room - safety_buffer
+            
+            # 3c: Overall room
+            overall_floor = calculator.calculate_overall_floor(account, profile)
+            available_from_overall = current_equity - overall_floor
+            
+            # Use the MOST RESTRICTIVE limit
+            available_risk = min(
+                available_from_combined,
+                available_from_daily,
+                available_from_overall
+            )
             
             # Ensure minimum available risk
             if available_risk < 1.0:
                 logger.warning(
                     f"[{account_key}] Very low available risk: ${available_risk:.2f} "
-                    f"(max: ${max_risk_per_trade:.2f}, active: ${active_risk:.2f})"
+                    f"(combined: ${available_from_combined:.2f}, "
+                    f"daily: ${available_from_daily:.2f}, "
+                    f"overall: ${available_from_overall:.2f})"
                 )
                 available_risk = max(available_risk, 1.0)  # Minimum $1
             
