@@ -822,6 +822,45 @@ class DatabaseManager:
             logger.error(f"Failed to close trade: {e}")
             return False
     
+    async def set_auto_tp_applied(self, trade_id: int) -> bool:
+        """Set autonomous TP assignment flag to prevent repeat actions."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET auto_tp_applied = TRUE WHERE trade_id = $1",
+                    trade_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set auto_tp_applied for trade {trade_id}: {e}")
+            return False
+    
+    async def set_auto_be_applied(self, trade_id: int) -> bool:
+        """Set autonomous breakeven flag to prevent repeat actions."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET auto_be_applied = TRUE WHERE trade_id = $1",
+                    trade_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set auto_be_applied for trade {trade_id}: {e}")
+            return False
+    
+    async def set_auto_partial_applied(self, trade_id: int) -> bool:
+        """Set autonomous 50% partial close flag to prevent repeat actions."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE active_trades SET auto_partial_applied = TRUE WHERE trade_id = $1",
+                    trade_id
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set auto_partial_applied for trade {trade_id}: {e}")
+            return False
+    
     # ==================== WAITING ROOM QUERIES ====================
     
     async def add_to_waiting_room(self, entry: WaitingRoom) -> bool:

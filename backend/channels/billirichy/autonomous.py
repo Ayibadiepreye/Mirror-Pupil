@@ -115,19 +115,19 @@ class BillirichyAutonomousManager:
         
         # 3 HOURS: Close 50% if in profit (conditional)
         elif time_since_entry >= timedelta(hours=3):
-            if await self._is_trade_in_profit(trade):
+            if not trade.auto_partial_applied and await self._is_trade_in_profit(trade):
                 await self._action_partial_close(trade, 0.50, "3-hour autonomous partial close")
                 return
         
         # 1.5 HOURS: Move SL to BE if profit ≥ threshold (conditional)
         if time_since_entry >= timedelta(hours=1, minutes=30):
-            if await self._should_move_to_be(trade):
+            if not trade.auto_be_applied and await self._should_move_to_be(trade):
                 await self._action_breakeven(trade, "1.5-hour autonomous BE")
                 return
         
         # 15 MINUTES: Auto-assign TP if SL present but no TP (conditional)
         if time_since_entry >= timedelta(minutes=15):
-            if trade.sl and not trade.tp:
+            if trade.sl and not trade.tp and not trade.auto_tp_applied:
                 await self._action_auto_assign_tp(trade)
                 return
     
@@ -158,6 +158,9 @@ class BillirichyAutonomousManager:
             
             # Update database
             await self.db.update_trade_tp(trade.trade_id, auto_tp)
+            
+            # Set autonomous flag to prevent repeat actions
+            await self.db.set_auto_tp_applied(trade.trade_id)
             
             logger.info(
                 f"[AUTO-TP] {trade.signal_id} ({trade.symbol}): "
@@ -198,6 +201,9 @@ class BillirichyAutonomousManager:
             
             # Update database
             await self.db.update_trade_sl(trade.trade_id, trade.entry_price)
+            
+            # Set autonomous flag to prevent repeat actions
+            await self.db.set_auto_be_applied(trade.trade_id)
             
             logger.info(
                 f"[AUTO-BE] {trade.signal_id} ({trade.symbol}): "
@@ -244,6 +250,9 @@ class BillirichyAutonomousManager:
             # Update database
             new_lot_size = round(trade.lot_size - qty, 2)
             await self.db.update_trade_lot_size(trade.trade_id, new_lot_size)
+            
+            # Set autonomous flag to prevent repeat actions
+            await self.db.set_auto_partial_applied(trade.trade_id)
             
             logger.info(
                 f"[AUTO-PARTIAL] {trade.signal_id} ({trade.symbol}): "

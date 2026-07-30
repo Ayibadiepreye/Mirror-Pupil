@@ -105,6 +105,9 @@ class ActiveTrade(BaseModel):
     tp1_hit: bool = False
     risk_usd: Optional[float] = None
     current_pnl: Optional[float] = None  # Live unrealized P&L from TradeLocker
+    auto_tp_applied: bool = False  # Autonomous TP assignment flag
+    auto_be_applied: bool = False  # Autonomous breakeven flag
+    auto_partial_applied: bool = False  # Autonomous 50% partial close flag
 
 
 class WaitingRoom(BaseModel):
