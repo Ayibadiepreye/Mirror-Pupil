@@ -492,12 +492,24 @@ class TradeExecutor:
                 # Risk exceeds budget - auto-adjust
                 adjusted_lot_size = available_risk / risk_per_lot
                 
-                # Step 6: Round to lot_step
+                # Step 6: Round to lot_step (try normal rounding first)
                 lot_step = instrument.get('lot_step', 0.01)
                 final_lot_size = client.round_lot_size(adjusted_lot_size, lot_step)
                 
                 # Calculate final risk with rounded lot size
                 final_risk = final_lot_size * risk_per_lot
+                
+                # Step 6b: Smart fallback - if rounded risk still exceeds, floor instead
+                if final_risk > available_risk:
+                    import math
+                    final_lot_size = math.floor(adjusted_lot_size / lot_step) * lot_step
+                    final_lot_size = round(final_lot_size, 2)  # Clean up float precision
+                    final_risk = final_lot_size * risk_per_lot
+                    
+                    logger.info(
+                        f"[{account_key}] Normal rounding exceeded risk, using floor: "
+                        f"{client.round_lot_size(adjusted_lot_size, lot_step)} → {final_lot_size} lots"
+                    )
                 
                 logger.info(
                     f"[{account_key}] AUTO-ADJUST CALCULATION: "
