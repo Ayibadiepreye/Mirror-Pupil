@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Star, Trash2, ShieldOff, PauseCircle, PlayCircle, Server, RotateCcw } from "lucide-react";
 import { accountsApi, botApi, channelsApi, QK, riskProfilesApi, getApiBaseUrl, getWsBaseUrl, setApiUrls, resetApiUrls } from "@/lib/mp/api";
@@ -538,6 +539,7 @@ function BackendUrlConfig() {
         </>
       )}
     </section>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
