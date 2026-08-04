@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../auth/auth_service.dart';
 import 'mock_data.dart';
@@ -16,6 +17,34 @@ class MpConfig {
       String.fromEnvironment('WS_BASE_URL', defaultValue: 'wss://win-ka0c6cpkmms.tailc9cd79.ts.net/mirrorpupil');
   static const useMock =
       String.fromEnvironment('USE_MOCK', defaultValue: 'false') == 'true';
+  
+  /// Runtime-configurable URLs (stored in SharedPreferences)
+  static Future<String> getApiUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('mp.api.url') ?? apiBaseUrl;
+  }
+  
+  static Future<String> getWsUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('mp.ws.url') ?? wsBaseUrl;
+  }
+  
+  static Future<void> setApiUrls(String apiUrl, String wsUrl) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('mp.api.url', apiUrl);
+    await prefs.setString('mp.ws.url', wsUrl);
+  }
+  
+  static Future<void> resetApiUrls() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('mp.api.url');
+    await prefs.remove('mp.ws.url');
+  }
+  
+  static Future<bool> hasCustomUrls() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey('mp.api.url');
+  }
 }
 
 class ApiException implements Exception {
@@ -28,11 +57,16 @@ class ApiException implements Exception {
 
 class MpApi {
   final http.Client _http;
-  final String baseUrl;
+  String baseUrl;
 
   MpApi({http.Client? client, String? baseUrl})
       : _http = client ?? http.Client(),
         baseUrl = baseUrl ?? MpConfig.apiBaseUrl;
+  
+  /// Reload base URL from storage (call after updating URLs)
+  Future<void> reloadBaseUrl() async {
+    baseUrl = await MpConfig.getApiUrl();
+  }
 
   Uri _u(String path, [Map<String, dynamic>? q]) {
     return Uri.parse('$baseUrl$path').replace(

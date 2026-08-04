@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../api/api_client.dart';
 import '../main.dart';
 import '../models/models.dart';
 import '../theme.dart';
@@ -457,8 +458,101 @@ class _ProfileDialogState extends State<_ProfileDialog> {
 
 // ─── Bot Settings Tab ────────────────────────────────────────────────
 
-class _BotSettingsTab extends StatelessWidget {
+class _BotSettingsTab extends StatefulWidget {
   const _BotSettingsTab();
+  @override
+  State<_BotSettingsTab> createState() => _BotSettingsTabState();
+}
+
+class _BotSettingsTabState extends State<_BotSettingsTab> {
+  bool _editingUrls = false;
+  late final _apiUrlController = TextEditingController();
+  late final _wsUrlController = TextEditingController();
+  bool _hasCustomUrls = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUrls();
+  }
+
+  Future<void> _loadUrls() async {
+    final apiUrl = await MpConfig.getApiUrl();
+    final wsUrl = await MpConfig.getWsUrl();
+    final hasCustom = await MpConfig.hasCustomUrls();
+    setState(() {
+      _apiUrlController.text = apiUrl;
+      _wsUrlController.text = wsUrl;
+      _hasCustomUrls = hasCustom;
+    });
+  }
+
+  Future<void> _saveUrls() async {
+    try {
+      await MpConfig.setApiUrls(_apiUrlController.text, _wsUrlController.text);
+      await mpApi.reloadBaseUrl();
+      setState(() {
+        _editingUrls = false;
+        _hasCustomUrls = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('URLs saved. Restart app for changes to take full effect.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save URLs: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _resetUrls() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset to defaults?'),
+        content: const Text('This will restore the default backend URLs from .env configuration.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: MpColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      await MpConfig.resetApiUrls();
+      await mpApi.reloadBaseUrl();
+      await _loadUrls();
+      setState(() => _editingUrls = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('URLs reset to defaults. Restart app for changes to take full effect.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to reset URLs: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _apiUrlController.dispose();
+    _wsUrlController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<BotStatus>(
@@ -467,6 +561,81 @@ class _BotSettingsTab extends StatelessWidget {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         final b = snap.data!;
         return ListView(padding: const EdgeInsets.all(12), children: [
+          // Backend URLs section
+          Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Expanded(child: Text('Backend URLs', style: TextStyle(fontWeight: FontWeight.w600))),
+              if (_hasCustomUrls && !_editingUrls) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: MpColors.warning.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('CUSTOM', style: TextStyle(color: MpColors.warning, fontSize: 9, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (!_editingUrls)
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18),
+                  onPressed: () => setState(() => _editingUrls = true),
+                  tooltip: 'Edit URLs',
+                )
+              else ...[
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setState(() {
+                    _editingUrls = false;
+                    _loadUrls();
+                  }),
+                  tooltip: 'Cancel',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.check, size: 18, color: Colors.green),
+                  onPressed: _saveUrls,
+                  tooltip: 'Save',
+                ),
+                if (_hasCustomUrls)
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 18, color: MpColors.danger),
+                    onPressed: _resetUrls,
+                    tooltip: 'Reset to defaults',
+                  ),
+              ],
+            ]),
+            const SizedBox(height: 8),
+            if (_editingUrls) ...[
+              TextField(
+                controller: _apiUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'API URL',
+                  hintText: 'http://your-server:8675',
+                  isDense: true,
+                ),
+                style: kMono.copyWith(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _wsUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'WebSocket URL',
+                  hintText: 'ws://your-server:8675',
+                  isDense: true,
+                ),
+                style: kMono.copyWith(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Change backend location without rebuilding. Restart app after saving.',
+                style: TextStyle(fontSize: 11, color: MpColors.textDim),
+              ),
+            ] else ...[
+              _kv('API URL', _apiUrlController.text),
+              _kv('WebSocket URL', _wsUrlController.text),
+            ],
+          ]))),
+          const SizedBox(height: 12),
           Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Trading hours', style: TextStyle(fontWeight: FontWeight.w600)),
             SwitchListTile(contentPadding: EdgeInsets.zero,
@@ -495,7 +664,7 @@ class _BotSettingsTab extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(children: [
       Expanded(child: Text(k, style: const TextStyle(color: MpColors.textDim, fontSize: 12))),
-      Text(v, style: kMono.copyWith(fontSize: 12)),
+      Expanded(child: Text(v, style: kMono.copyWith(fontSize: 11), textAlign: TextAlign.right)),
     ]),
   );
 }
