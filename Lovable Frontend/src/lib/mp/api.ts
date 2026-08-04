@@ -1,9 +1,8 @@
 /**
  * Mirror Pupil API client.
- * - Real HTTP via axios → backend at runtime-configurable URL (falls back to VITE_API_URL).
+ * - Real HTTP via axios → backend at VITE_API_URL.
  * - When VITE_USE_MOCK === "true" (dev only), returns in-memory mock data.
  *   Production builds (VITE_USE_MOCK unset/false) always hit the real API.
- * - Supports runtime URL configuration via localStorage for easy backend switching.
  */
 import axios, { type AxiosInstance } from "axios";
 import type {
@@ -13,30 +12,10 @@ import type {
 import * as mock from "./mock-data";
 import { getSession, refreshToken } from "./auth";
 
-// Runtime-configurable API URLs (stored in localStorage)
-const getStoredApiUrl = () => localStorage.getItem("mp.api.url");
-const getStoredWsUrl = () => localStorage.getItem("mp.ws.url");
-
-export const setApiUrls = (apiUrl: string, wsUrl: string) => {
-  localStorage.setItem("mp.api.url", apiUrl);
-  localStorage.setItem("mp.ws.url", wsUrl);
-  window.location.reload(); // Reload to apply new URLs
-};
-
-export const resetApiUrls = () => {
-  localStorage.removeItem("mp.api.url");
-  localStorage.removeItem("mp.ws.url");
-  window.location.reload();
-};
-
-export const getApiBaseUrl = () => 
-  getStoredApiUrl() ?? (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8675";
-
-export const getWsBaseUrl = () =>
-  getStoredWsUrl() ?? (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:8675";
-
-export const API_BASE_URL = getApiBaseUrl();
-export const WS_BASE_URL = getWsBaseUrl();
+export const API_BASE_URL =
+  (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8675";
+export const WS_BASE_URL =
+  (import.meta.env.VITE_WS_URL as string | undefined) ?? "ws://localhost:8675";
 export const USE_MOCK =
   (import.meta.env.VITE_USE_MOCK as string | undefined) === "true";
 

@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Star, Trash2, ShieldOff, PauseCircle, PlayCircle, Server, RotateCcw } from "lucide-react";
-import { accountsApi, botApi, channelsApi, QK, riskProfilesApi, getApiBaseUrl, getWsBaseUrl, setApiUrls, resetApiUrls } from "@/lib/mp/api";
+import { Pencil, Plus, Star, Trash2, ShieldOff, PauseCircle, PlayCircle } from "lucide-react";
+import { accountsApi, botApi, channelsApi, QK, riskProfilesApi } from "@/lib/mp/api";
 import { useConfirm } from "@/components/mp/ConfirmDialog";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -421,132 +420,6 @@ function BotSettingsTab() {
           <dd className="font-mono">Mirror Pupil v5.1</dd>
         </dl>
       </section>
-
-      <BackendUrlConfig />
-    </div>
-  );
-}
-
-function BackendUrlConfig() {
-  const [editing, setEditing] = useState(false);
-  const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
-  const [wsUrl, setWsUrl] = useState(getWsBaseUrl());
-  
-  const currentApiUrl = getApiBaseUrl();
-  const currentWsUrl = getWsBaseUrl();
-  const isCustom = localStorage.getItem("mp.api.url") !== null;
-
-  const handleSave = () => {
-    if (!apiUrl || !wsUrl) {
-      toast.error("Both URLs are required");
-      return;
-    }
-    setApiUrls(apiUrl, wsUrl);
-  };
-
-  const handleReset = () => {
-    resetApiUrls();
-  };
-
-  return (
-    <section className="rounded-lg border border-[color:var(--mp-border)] bg-[color:var(--mp-base)] p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Server className="size-4 text-[color:var(--mp-red)]" />
-          <h3 className="font-semibold">Backend Configuration</h3>
-        </div>
-        {isCustom && (
-          <span className="text-xs text-[color:var(--mp-red)] font-medium">CUSTOM URLs</span>
-        )}
-      </div>
-      
-      {!editing ? (
-        <>
-          <div className="space-y-2 text-sm">
-            <div>
-              <dt className="text-xs text-[color:var(--mp-text-dim)]">API URL</dt>
-              <dd className="font-mono text-xs mt-1">{currentApiUrl}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-[color:var(--mp-text-dim)]">WebSocket URL</dt>
-              <dd className="font-mono text-xs mt-1">{currentWsUrl}</dd>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setEditing(true)}
-              className="gap-2"
-            >
-              <Pencil className="size-3" /> Edit URLs
-            </Button>
-            {isCustom && (
-              <Button 
-                variant="outline" 
-                onClick={handleReset}
-                className="gap-2"
-              >
-                <RotateCcw className="size-3" /> Reset to Default
-              </Button>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="space-y-3">
-            <Field label="API URL">
-              <Input 
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="https://your-backend.com/mirrorpupil"
-              />
-              <p className="text-xs text-[color:var(--mp-text-dim)] mt-1">
-                Example: https://win-server.tailscale.net/mirrorpupil or http://localhost:8675
-              </p>
-            </Field>
-            <Field label="WebSocket URL">
-              <Input 
-                value={wsUrl}
-                onChange={(e) => setWsUrl(e.target.value)}
-                placeholder="wss://your-backend.com/mirrorpupil"
-              />
-              <p className="text-xs text-[color:var(--mp-text-dim)] mt-1">
-                Example: wss://win-server.tailscale.net/mirrorpupil or ws://localhost:8675
-              </p>
-            </Field>
-          </div>
-          <div className="flex gap-2">
-            <Button 
-              onClick={handleSave}
-              className="gap-2 bg-[color:var(--mp-red)] hover:bg-[color:var(--mp-red)]/90 text-white"
-            >
-              Save & Reload
-            </Button>
-            <Button 
-              variant="outline"
-              onClick={() => {
-                setApiUrl(currentApiUrl);
-                setWsUrl(currentWsUrl);
-                setEditing(false);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-          <p className="text-xs text-yellow-500">
-            ⚠️ Page will reload after saving to apply new URLs
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs uppercase tracking-wider text-[color:var(--mp-text-dim)]">{label}</Label>
-      {children}
     </div>
   );
 }
