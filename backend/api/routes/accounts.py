@@ -38,6 +38,7 @@ class AccountUpdate(BaseModel):
     """Request model for updating an account."""
     display_name: Optional[str] = None
     lot_size_override: Optional[float] = None
+    use_calculated_lot_size: Optional[bool] = None  # Auto-calculate lot size toggle
     paused: Optional[bool] = None
     risk_profile_id: Optional[int] = None
     max_concurrent_trades_override: Optional[int] = None
@@ -96,6 +97,7 @@ class AccountResponse(BaseModel):
     tl_server: str
     display_name: Optional[str]
     lot_size_override: Optional[float]
+    use_calculated_lot_size: bool  # Auto-calculate lot size toggle
     initial_balance: float
     current_balance: float
     highest_banked_balance: float
@@ -656,6 +658,10 @@ async def update_account(
         
         if account_data.lot_size_override is not None:
             await db.update_account(account_key, lot_size_override=account_data.lot_size_override)
+        
+        if account_data.use_calculated_lot_size is not None:
+            await db.update_account(account_key, use_calculated_lot_size=account_data.use_calculated_lot_size)
+            logger.info(f"✓ Auto-calculate lot size set to {account_data.use_calculated_lot_size} for {account_key}")
         
         if account_data.paused is not None:
             await db.update_account_paused(account_key, account_data.paused)

@@ -23,6 +23,7 @@ export interface Account {
   risk_profile_id: number | null;
   max_concurrent_trades_override: number | null;
   lot_size_override: number | null;
+  use_calculated_lot_size: boolean;  // Auto-calculate lot size from max risk
   daily_drawdown_pct: number;
   daily_loss_limit_pct: number;
   overall_drawdown_pct: number;

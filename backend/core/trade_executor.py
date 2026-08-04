@@ -301,12 +301,20 @@ class TradeExecutor:
             Calculated lot size rounded to lot_step
         """
         if not sl_price or sl_price <= 0:
-            # No SL - use default lot size
-            logger.warning(f"No stop loss for {symbol}, using default lot size")
+            # No SL - if auto-calculate is enabled, this is a bare signal → waiting room
+            # Use default lot size (will be adjusted when SL arrives)
+            if account.use_calculated_lot_size:
+                logger.info(f"[{account.account_key}] Auto-calculate enabled but no SL - using default lot size (bare signal → waiting room)")
+            else:
+                logger.warning(f"No stop loss for {symbol}, using default lot size")
             return self.default_lot_size
         
-        # Account lot size override takes precedence
-        if account.lot_size_override and account.lot_size_override > 0:
+        # Check if auto-calculate is enabled (ignores lot_size_override)
+        if account.use_calculated_lot_size:
+            logger.info(f"[{account.account_key}] Auto-calculate lot size enabled - calculating from max risk")
+            # Skip to calculation (don't use override)
+        # Account lot size override takes precedence (only if auto-calculate is OFF)
+        elif account.lot_size_override and account.lot_size_override > 0:
             logger.debug(f"Using account lot size override: {account.lot_size_override}")
             return account.lot_size_override
         

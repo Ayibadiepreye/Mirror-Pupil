@@ -427,6 +427,7 @@ function EditAccountDialog({ account, onClose }: { account: Account | null; onCl
     ? {
         display_name: account.display_name ?? "",
         lot_size_override: account.lot_size_override,
+        use_calculated_lot_size: account.use_calculated_lot_size ?? false,
         risk_profile_id: account.risk_profile_id,
         max_concurrent_trades_override: account.max_concurrent_trades_override,
       }
@@ -459,7 +460,12 @@ function EditAccountDialog({ account, onClose }: { account: Account | null; onCl
               <Input type="number" step="0.01"
                 value={current.lot_size_override ?? ""}
                 onChange={(e) => setForm({ ...form, lot_size_override: e.target.value === "" ? null : Number(e.target.value) })}
+                disabled={current.use_calculated_lot_size}
+                className={current.use_calculated_lot_size ? "opacity-50" : ""}
               />
+              {current.use_calculated_lot_size && (
+                <p className="text-xs text-[color:var(--mp-text-dim)] mt-1">Disabled (auto-calculate is ON)</p>
+              )}
             </Field>
             <Field label="Max concurrent trades">
               <Input type="number" step="1"
@@ -468,6 +474,23 @@ function EditAccountDialog({ account, onClose }: { account: Account | null; onCl
               />
             </Field>
           </div>
+          <Field label="Lot Size Mode">
+            <div className="flex items-center space-x-2 p-3 border border-[color:var(--mp-border)] rounded-md">
+              <input
+                type="checkbox"
+                id="use-calculated-lot-size"
+                checked={current.use_calculated_lot_size ?? false}
+                onChange={(e) => setForm({ ...form, use_calculated_lot_size: e.target.checked })}
+                className="w-4 h-4"
+              />
+              <label htmlFor="use-calculated-lot-size" className="text-sm cursor-pointer">
+                <span className="font-medium">Auto-calculate lot size from max risk</span>
+                <p className="text-xs text-[color:var(--mp-text-dim)] mt-0.5">
+                  When enabled, ignores lot size override and calculates optimal lot size to maximize profit on every signal
+                </p>
+              </label>
+            </div>
+          </Field>
           <Field label="Risk profile">
             <Select
               value={String(current.risk_profile_id ?? "none")}

@@ -55,6 +55,7 @@ class Account(BaseModel):
     display_name: Optional[str] = None  # Custom GUI name
     user_id: Optional[str] = None  # Owner user ID
     lot_size_override: Optional[float] = None  # Per-account lot size
+    use_calculated_lot_size: bool = False  # Auto-calculate lot size from max risk
     initial_balance: Optional[float] = None
     current_balance: Optional[float] = None
     highest_banked_balance: Optional[float] = None
