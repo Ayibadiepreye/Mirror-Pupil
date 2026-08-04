@@ -297,6 +297,7 @@ if __name__ == "__main__":
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8675"))  # Changed from 8000 to avoid conflicts
     
+    logger.info(f"API_PORT from env: {os.getenv('API_PORT', 'NOT SET')}")
     logger.info(f"Starting uvicorn server on {host}:{port}")
     
     uvicorn.run(
