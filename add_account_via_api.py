@@ -72,8 +72,8 @@ try:
 
 except requests.exceptions.ConnectionError:
     print("❌ Could not connect to the API")
-    print("   Make sure the backend is running on http://127.0.0.1:8000")
-    print("   Start it with: py -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000")
+    print("   Make sure the backend is running on http://127.0.0.1:8675")
+    print("   Start it with: py -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8675")
 
 except Exception as e:
     print(f"❌ Error: {e}")

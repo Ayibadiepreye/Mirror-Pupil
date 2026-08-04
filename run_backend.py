@@ -17,7 +17,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "backend.api.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8675,  # Changed from 8000 to avoid conflicts
         reload=True,
         log_level="info"
     )
