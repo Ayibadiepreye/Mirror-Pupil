@@ -12,9 +12,9 @@ class MpConfig {
   /// flutter run --dart-define=API_BASE_URL=https://api.example.com
   /// flutter run --dart-define=USE_MOCK=true
   static const apiBaseUrl =
-      String.fromEnvironment('API_BASE_URL', defaultValue: 'https://win-ka0c6cpkmms.tailc9cd79.ts.net/mirrorpupil');
+      String.fromEnvironment('API_BASE_URL', defaultValue: 'http://win-ka0c6cpkmms.tailc9cd79.ts.net:8675');
   static const wsBaseUrl =
-      String.fromEnvironment('WS_BASE_URL', defaultValue: 'wss://win-ka0c6cpkmms.tailc9cd79.ts.net/mirrorpupil');
+      String.fromEnvironment('WS_BASE_URL', defaultValue: 'ws://win-ka0c6cpkmms.tailc9cd79.ts.net:8675');
   static const useMock =
       String.fromEnvironment('USE_MOCK', defaultValue: 'false') == 'true';
   
@@ -86,13 +86,30 @@ class MpApi {
     }
     
     late http.Response r;
-    switch (method) {
-      case 'GET': r = await _http.get(uri, headers: headers); break;
-      case 'POST': r = await _http.post(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-      case 'PUT': r = await _http.put(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-      case 'PATCH': r = await _http.patch(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-      case 'DELETE': r = await _http.delete(uri, headers: headers); break;
-      default: throw StateError('Unsupported method $method');
+    try {
+      switch (method) {
+        case 'GET': r = await _http.get(uri, headers: headers); break;
+        case 'POST': r = await _http.post(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+        case 'PUT': r = await _http.put(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+        case 'PATCH': r = await _http.patch(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+        case 'DELETE': r = await _http.delete(uri, headers: headers); break;
+        default: throw StateError('Unsupported method $method');
+      }
+    } catch (e) {
+      // Catch network errors (SSL handshake, connection issues, etc.)
+      if (e.toString().contains('HandshakeException') || 
+          e.toString().contains('CERTIFICATE_VERIFY_FAILED') ||
+          e.toString().contains('certificate')) {
+        throw ApiException(
+          0, 
+          'SSL Certificate error. Backend URL may need to use HTTP instead of HTTPS, or Tailscale certificate needs refresh.'
+        );
+      } else if (e.toString().contains('SocketException') || 
+                 e.toString().contains('Connection refused')) {
+        throw ApiException(0, 'Cannot connect to backend. Check if backend is running and URL is correct.');
+      } else {
+        throw ApiException(0, 'Network error: ${e.toString()}');
+      }
     }
     
     // Handle 401 Unauthorized - token expired or invalid
@@ -103,12 +120,25 @@ class MpApi {
       if (newSession != null) {
         headers['Authorization'] = 'Bearer ${newSession.token}';
         // Retry request with new token
-        switch (method) {
-          case 'GET': r = await _http.get(uri, headers: headers); break;
-          case 'POST': r = await _http.post(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-          case 'PUT': r = await _http.put(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-          case 'PATCH': r = await _http.patch(uri, headers: headers, body: jsonEncode(body ?? {})); break;
-          case 'DELETE': r = await _http.delete(uri, headers: headers); break;
+        try {
+          switch (method) {
+            case 'GET': r = await _http.get(uri, headers: headers); break;
+            case 'POST': r = await _http.post(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+            case 'PUT': r = await _http.put(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+            case 'PATCH': r = await _http.patch(uri, headers: headers, body: jsonEncode(body ?? {})); break;
+            case 'DELETE': r = await _http.delete(uri, headers: headers); break;
+          }
+        } catch (e) {
+          // Same error handling for retry
+          if (e.toString().contains('HandshakeException') || 
+              e.toString().contains('CERTIFICATE_VERIFY_FAILED') ||
+              e.toString().contains('certificate')) {
+            throw ApiException(
+              0, 
+              'SSL Certificate error on retry. Backend URL may need to use HTTP instead of HTTPS.'
+            );
+          }
+          throw ApiException(0, 'Network error on retry: ${e.toString()}');
         }
       }
     }

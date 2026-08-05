@@ -472,7 +472,8 @@ class HumanLikeTelegramClient:
                 
                 # Check if we have a handler for this channel
                 if chat_id in self.message_handlers:
-                    logger.info(f"📨 New message in channel {chat_id}: ID={message.id}")
+                    content_type = type(message.content).__name__ if hasattr(message, 'content') else 'unknown'
+                    logger.info(f"📨 New message in channel {chat_id}: ID={message.id} type={content_type}")
                     
                     # Mark as read first (human-like)
                     await self._mark_as_read(chat_id, [message.id])
@@ -515,11 +516,14 @@ class HumanLikeTelegramClient:
                     message_id = update.message_id
                     new_content = update.new_content
                     
-                    # Only process if this is a text message edit
-                    if hasattr(new_content, 'text') and new_content.text:
+                    # Process text edits AND photo/video caption edits
+                    has_text = hasattr(new_content, 'text') and new_content.text
+                    has_caption = hasattr(new_content, 'caption') and new_content.caption
+                    if has_text or has_caption:
                         # Check if we have a handler for this channel
                         if chat_id in self.message_handlers:
-                            logger.info(f"✏️ Message content edited in channel {chat_id}: ID={message_id}")
+                            content_type = type(new_content).__name__
+                            logger.info(f"✏️ Message content edited in channel {chat_id}: ID={message_id} type={content_type}")
                             
                             # Fetch the full message object
                             message = await self.get_message(chat_id, message_id)
